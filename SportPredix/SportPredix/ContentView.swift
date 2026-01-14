@@ -2,14 +2,7 @@
 //  ContentView.swift
 //  SportPredix
 //
-//  Tutto in un unico file, con:
-//  - MVVM
-//  - Calendario 3 giorni (ieri/oggi/domani) selezionabile
-//  - 12 partite al giorno generate da Serie A, Premier, Liga, Bundesliga
-//  - Toolbar con 3 tab: Calendario, Piazzate, Profilo
-//  - Pagina profilo con nome salvato in UserDefaults
-//  - Saluto "Ciao <nome>" in home
-//
+//  Created by Formatiks Team on 12/01/2026.
 
 import SwiftUI
 
@@ -52,7 +45,7 @@ struct BetPick: Identifiable, Codable {
     init(id: UUID = UUID(), match: Match, outcome: MatchOutcome, odd: Double) {
         self.id = id
         self.match = match
-        self.outcome = outcome
+        this.outcome = outcome
         self.odd = odd
     }
 }
@@ -83,44 +76,45 @@ struct BetSlip: Identifiable, Codable {
     }
 }
 
-// MARK: - VIEW MODEL
+// MARK: - VIEWMODEL
 
 final class BettingViewModel: ObservableObject {
+
+    // TAB
     @Published var selectedTab = 0
+
+    // SCHEDINE
     @Published var showSheet = false
     @Published var showSlipDetail: BetSlip?
-
-    @Published var balance: Double {
-        didSet {
-            UserDefaults.standard.set(balance, forKey: "balance")
-        }
-    }
-
     @Published var currentPicks: [BetPick] = []
     @Published var slips: [BetSlip] = []
 
-    // Calendario: 0 = ieri, 1 = oggi, 2 = domani
+    // SALDO
+    @Published var balance: Double {
+        didSet { UserDefaults.standard.set(balance, forKey: "balance") }
+    }
+
+    // PROFILO
+    @Published var userName: String {
+        didSet { UserDefaults.standard.set(userName, forKey: "userName") }
+    }
+
+    // CALENDARIO
     @Published var selectedDayIndex: Int = 1
     @Published var days: [Date] = []
 
-    // Partite per giorno
-    @Published private(set) var matchesByDate: [Date: [Match]] = [:]
-
-    // Nome utente
-    @Published var userName: String {
-        didSet {
-            UserDefaults.standard.set(userName, forKey: "userName")
-        }
-    }
+    // PARTITE PER GIORNO (String come chiave → compatibile con IPA)
+    @Published private(set) var matchesByDate: [String: [Match]] = [:]
 
     private let slipsKey = "savedSlips"
 
-    // Squadre per campionati
+    // LISTE SQUADRE
     private let serieA = ["Inter", "Milan", "Juventus", "Napoli", "Roma", "Lazio", "Atalanta", "Fiorentina", "Bologna", "Torino"]
     private let premierLeague = ["Manchester City", "Liverpool", "Arsenal", "Chelsea", "Manchester United", "Tottenham", "Newcastle", "Aston Villa"]
     private let liga = ["Real Madrid", "Barcelona", "Atletico Madrid", "Sevilla", "Valencia", "Villarreal", "Real Sociedad", "Betis"]
     private let bundesliga = ["Bayern Monaco", "Borussia Dortmund", "RB Lipsia", "Leverkusen", "Union Berlin", "Eintracht Francoforte", "Wolfsburg", "Stoccarda"]
 
+    // INIT
     init() {
         let savedBalance = UserDefaults.standard.double(forKey: "balance")
         self.balance = savedBalance == 0 ? 1000 : savedBalance
@@ -132,10 +126,16 @@ final class BettingViewModel: ObservableObject {
         generateMatchesForAllDays()
     }
 
-    // MARK: - Calendario
+    // MARK: - DATE HELPERS
 
     private func startOfDay(_ date: Date) -> Date {
         Calendar.current.startOfDay(for: date)
+    }
+
+    private func key(for date: Date) -> String {
+        let df = DateFormatter()
+        df.dateFormat = "yyyy-MM-dd"
+        return df.string(from: date)
     }
 
     private func setupDays() {
@@ -151,11 +151,10 @@ final class BettingViewModel: ObservableObject {
     }
 
     var matchesForSelectedDay: [Match] {
-        matchesByDate[startOfDay(selectedDate)] ?? []
+        matchesByDate[key(for: selectedDate)] ?? []
     }
 
     func refreshIfNeeded() {
-        // Se il "oggi" salvato non è più oggi, rigenera i giorni
         let today = startOfDay(Date())
         if startOfDay(days[1]) != today {
             setupDays()
@@ -163,9 +162,11 @@ final class BettingViewModel: ObservableObject {
         }
     }
 
+    // MARK: - GENERAZIONE PARTITE
+
     private func generateMatchesForAllDays() {
         for day in days {
-            matchesByDate[startOfDay(day)] = generateMatches(for: day)
+            matchesByDate[key(for: day)] = generateMatches(for: day)
         }
     }
 
@@ -178,32 +179,29 @@ final class BettingViewModel: ObservableObject {
 
         for i in 0..<numberOfMatches {
             if allTeams.count < 2 { break }
+
             let home = allTeams.removeFirst()
             let away = allTeams.removeFirst()
 
-            let hour = 18 + (i % 5) // tra 18 e 22
+            let hour = 18 + (i % 5)
             let minute = (i * 15) % 60
             let timeString = String(format: "%02d:%02d", hour, minute)
 
             let odds = generateOdds()
-            let match = Match(home: home, away: away, time: timeString, odds: odds)
-            matches.append(match)
+            matches.append(Match(home: home, away: away, time: timeString, odds: odds))
         }
 
         return matches
     }
 
     private func generateOdds() -> [Double] {
-        // Quote realistiche 1X2
         let base = Double.random(in: 1.20...2.20)
         let draw = Double.random(in: 2.80...4.50)
         let away = Double.random(in: 2.00...6.50)
-
-        let odds = [base, draw, away].shuffled()
-        return odds.map { Double(round(100 * $0) / 100) }
+        return [base, draw, away].shuffled().map { Double(round($0 * 100) / 100) }
     }
 
-    // MARK: - Logica scommesse
+    // MARK: - SCOMMESSE
 
     var totalOdd: Double {
         currentPicks.map { $0.odd }.reduce(1, *)
@@ -245,7 +243,6 @@ final class BettingViewModel: ObservableObject {
         return decoded
     }
 }
-
 // MARK: - MAIN VIEW
 
 struct ContentView: View {
@@ -257,6 +254,7 @@ struct ContentView: View {
             Color.black.ignoresSafeArea()
 
             VStack(spacing: 0) {
+
                 header
 
                 if vm.selectedTab == 0 {
@@ -270,7 +268,7 @@ struct ContentView: View {
                 bottomBar
             }
 
-            if !vm.currentPicks.isEmpty && vm.selectedTab == 0 {
+            if vm.selectedTab == 0 && !vm.currentPicks.isEmpty {
                 floatingButton
             }
         }
@@ -295,8 +293,10 @@ struct ContentView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 8) {
+
             HStack {
-                Text(vm.selectedTab == 0 ? "Calendario" : (vm.selectedTab == 1 ? "Piazzate" : "Profilo"))
+                Text(vm.selectedTab == 0 ? "Calendario" :
+                     vm.selectedTab == 1 ? "Piazzate" : "Profilo")
                     .font(.largeTitle.bold())
                     .foregroundColor(.white)
 
@@ -314,7 +314,6 @@ struct ContentView: View {
 
                 smallCalendar
             }
-
         }
         .padding()
     }
@@ -325,38 +324,38 @@ struct ContentView: View {
         HStack(spacing: 8) {
             ForEach(0..<vm.days.count, id: \.self) { index in
                 let date = vm.days[index]
+
                 Button {
                     vm.selectedDayIndex = index
                 } label: {
                     VStack(spacing: 2) {
-                        Text(dayLabel(for: date, index: index))
+                        Text(index == 0 ? "Ieri" :
+                             index == 1 ? "Oggi" : "Domani")
                             .font(.caption2)
                             .foregroundColor(.gray)
+
                         Text(dayNumber(for: date))
                             .font(.headline)
+
                         Text(monthShort(for: date))
                             .font(.caption2)
                     }
                     .padding(8)
                     .frame(maxWidth: .infinity)
-                    .background(vm.selectedDayIndex == index ? Color.accentCyan.opacity(0.2) : Color.white.opacity(0.06))
+                    .background(
+                        vm.selectedDayIndex == index ?
+                        Color.accentCyan.opacity(0.2) :
+                        Color.white.opacity(0.06)
+                    )
                     .cornerRadius(10)
                     .overlay(
                         RoundedRectangle(cornerRadius: 10)
-                            .stroke(vm.selectedDayIndex == index ? Color.accentCyan : Color.clear, lineWidth: 1)
+                            .stroke(vm.selectedDayIndex == index ?
+                                    Color.accentCyan : Color.clear, lineWidth: 1)
                     )
                     .foregroundColor(.white)
                 }
             }
-        }
-    }
-
-    private func dayLabel(for date: Date, index: Int) -> String {
-        switch index {
-        case 0: return "Ieri"
-        case 1: return "Oggi"
-        case 2: return "Domani"
-        default: return ""
         }
     }
 
@@ -378,6 +377,7 @@ struct ContentView: View {
     private var matchList: some View {
         ScrollView {
             VStack(spacing: 16) {
+
                 if vm.matchesForSelectedDay.isEmpty {
                     Text("Nessuna partita per questo giorno")
                         .foregroundColor(.gray)
@@ -394,6 +394,7 @@ struct ContentView: View {
 
     private func matchCard(_ match: Match) -> some View {
         VStack(spacing: 10) {
+
             HStack {
                 Text(match.home)
                     .font(.headline)
@@ -445,6 +446,7 @@ struct ContentView: View {
     private var placedBets: some View {
         ScrollView {
             VStack(spacing: 12) {
+
                 if vm.slips.isEmpty {
                     Text("Nessuna scommessa piazzata")
                         .foregroundColor(.gray)
@@ -455,10 +457,13 @@ struct ContentView: View {
                             vm.showSlipDetail = slip
                         } label: {
                             VStack(alignment: .leading, spacing: 4) {
+
                                 Text("Quota \(slip.totalOdd, specifier: "%.2f")")
                                     .foregroundColor(.accentCyan)
+
                                 Text("Puntata €\(slip.stake, specifier: "%.2f")")
                                     .foregroundColor(.white)
+
                                 Text("Vincita potenziale €\(slip.potentialWin, specifier: "%.2f")")
                                     .foregroundColor(.gray)
                                     .font(.caption)
@@ -517,7 +522,9 @@ struct ContentView: View {
             Spacer()
             HStack {
                 Spacer()
+
                 ZStack(alignment: .topTrailing) {
+
                     Button {
                         vm.showSheet = true
                     } label: {
@@ -545,7 +552,6 @@ struct ContentView: View {
         }
     }
 }
-
 // MARK: - BET SHEET
 
 struct BetSheet: View {
@@ -562,30 +568,44 @@ struct BetSheet: View {
             Color.black.ignoresSafeArea()
 
             VStack(spacing: 16) {
-                Capsule().fill(Color.gray).frame(width: 40, height: 5)
 
-                ForEach(picks) { pick in
-                    HStack {
-                        Text("\(pick.match.home) - \(pick.match.away)")
-                            .foregroundColor(.white)
-                        Spacer()
-                        Button {
-                            picks.removeAll { $0.id == pick.id }
-                        } label: {
-                            Image(systemName: "trash")
-                                .foregroundColor(.red)
+                Capsule()
+                    .fill(Color.gray)
+                    .frame(width: 40, height: 5)
+                    .padding(.top, 8)
+
+                ScrollView {
+                    VStack(spacing: 12) {
+                        ForEach(picks) { pick in
+                            HStack {
+                                Text("\(pick.match.home) - \(pick.match.away)")
+                                    .foregroundColor(.white)
+
+                                Spacer()
+
+                                Button {
+                                    picks.removeAll { $0.id == pick.id }
+                                } label: {
+                                    Image(systemName: "trash")
+                                        .foregroundColor(.red)
+                                }
+                            }
                         }
                     }
+                    .padding(.horizontal)
                 }
 
-                Text("Quota totale \(totalOdd, specifier: "%.2f")")
-                    .foregroundColor(.accentCyan)
+                VStack(spacing: 8) {
+                    Text("Quota totale \(totalOdd, specifier: "%.2f")")
+                        .foregroundColor(.accentCyan)
 
-                Text("Importo €\(stake, specifier: "%.2f")")
-                    .foregroundColor(.white)
+                    Text("Importo €\(stake, specifier: "%.2f")")
+                        .foregroundColor(.white)
 
-                Slider(value: $stake, in: 1...min(balance, 500), step: 1)
-                    .accentColor(.accentCyan)
+                    Slider(value: $stake, in: 1...min(balance, 500), step: 1)
+                        .accentColor(.accentCyan)
+                }
+                .padding(.horizontal)
 
                 Button("Conferma selezione") {
                     onConfirm(stake)
@@ -595,15 +615,16 @@ struct BetSheet: View {
                 .background(Color.green)
                 .foregroundColor(.black)
                 .cornerRadius(16)
+                .padding(.horizontal)
 
                 Spacer()
             }
-            .padding()
+            .padding(.top, 20)
         }
     }
 }
 
-// MARK: - SLIP DETAIL
+// MARK: - SLIP DETAIL VIEW
 
 struct SlipDetailView: View {
     let slip: BetSlip
@@ -612,33 +633,48 @@ struct SlipDetailView: View {
         ZStack {
             Color.black.ignoresSafeArea()
 
-            VStack(spacing: 12) {
-                Text("Dettaglio scommessa")
-                    .foregroundColor(.white)
-                    .font(.headline)
+            ScrollView {
+                VStack(spacing: 16) {
 
-                ForEach(slip.picks) { pick in
-                    Text("\(pick.match.home) - \(pick.match.away) | \(pick.outcome.rawValue)")
+                    Text("Dettaglio scommessa")
                         .foregroundColor(.white)
+                        .font(.title2.bold())
+                        .padding(.top)
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        ForEach(slip.picks) { pick in
+                            Text("\(pick.match.home) - \(pick.match.away) | \(pick.outcome.rawValue)")
+                                .foregroundColor(.white)
+                        }
+                    }
+                    .padding()
+                    .background(Color.white.opacity(0.06))
+                    .cornerRadius(12)
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Quota: \(slip.totalOdd, specifier: "%.2f")")
+                        Text("Puntata: €\(slip.stake, specifier: "%.2f")")
+                        Text("Vincita potenziale: €\(slip.potentialWin, specifier: "%.2f")")
+                        Text("Probabilità implicita: \((slip.impliedProbability * 100), specifier: "%.1f")%")
+                        Text("Expected Value: €\(slip.expectedValue, specifier: "%.2f")")
+                            .foregroundColor(slip.expectedValue >= 0 ? .green : .red)
+                    }
+                    .foregroundColor(.accentCyan)
+                    .padding()
+                    .background(Color.white.opacity(0.06))
+                    .cornerRadius(12)
+
+                    Spacer()
                 }
-
-                Text("Quota: \(slip.totalOdd, specifier: "%.2f")")
-                Text("Puntata: €\(slip.stake, specifier: "%.2f")")
-                Text("Vincita potenziale: €\(slip.potentialWin, specifier: "%.2f")")
-
-                Text("Probabilità implicita: \((slip.impliedProbability * 100), specifier: "%.1f")%")
-                Text("Expected Value: €\(slip.expectedValue, specifier: "%.2f")")
-                    .foregroundColor(slip.expectedValue >= 0 ? .green : .red)
+                .padding()
             }
-            .foregroundColor(.accentCyan)
-            .padding()
         }
     }
 }
-
 // MARK: - PROFILE VIEW
 
 struct ProfileView: View {
+
     @Binding var userName: String
     @Binding var balance: Double
 
@@ -646,9 +682,10 @@ struct ProfileView: View {
         ZStack {
             Color.black.ignoresSafeArea()
 
-            VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: 24) {
+
                 Text("Profilo")
-                    .font(.title.bold())
+                    .font(.largeTitle.bold())
                     .foregroundColor(.white)
 
                 VStack(alignment: .leading, spacing: 8) {
