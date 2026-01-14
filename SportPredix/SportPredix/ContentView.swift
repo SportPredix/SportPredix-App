@@ -5,163 +5,354 @@
 //  Created by Formatiks Team on 12/01/26.
 //
 
+//
+//  ContentView.swift
+//  SportPredix
+//
+//  Created by Formatiks Team on 12/01/26.
+//
+
+
 import SwiftUI
+
+// MARK: - THEME
+
+extension Color {
+    static let accentCyan = Color(red: 68/255, green: 224/255, blue: 203/255)
+}
 
 // MARK: - MODELS
 
+enum MatchOutcome: String {
+    case home = "1"
+    case draw = "X"
+    case away = "2"
+}
+
 struct Match: Identifiable {
-    // Modello singolo, conforme a Identifiable
     let id = UUID()
     let home: String
     let away: String
-    let odds: [Double] // 1X2
+    let time: String
+    let odds: [Double]
+}
+
+struct BetPick: Identifiable {
+    let id = UUID()
+    let match: Match
+    let outcome: MatchOutcome
+    let odd: Double
+}
+
+struct BetSlip: Identifiable {
+    let id = UUID()
+    let picks: [BetPick]
+    let stake: Double
+    let totalOdd: Double
+    let potentialWin: Double
+    let date = Date()
 }
 
 // MARK: - MAIN VIEW
 
 struct ContentView: View {
 
-    // Stato attuale della data selezionata
-    @State private var selectedDate: Date = Date()
+    @State private var selectedTab = 0
+    @State private var showSheet = false
+    @State private var showSlipDetail: BetSlip?
+
+    @State private var balance: Double =
+        UserDefaults.standard.double(forKey: "balance") == 0 ? 1000 :
+        UserDefaults.standard.double(forKey: "balance")
+
+    @State private var currentPicks: [BetPick] = []
+    @State private var slips: [BetSlip] = []
+
+    private let matches: [Match] = [
+        Match(home: "Napoli", away: "Parma", time: "18:30", odds: [1.33, 4.20, 7.00]),
+        Match(home: "Inter", away: "Lecce", time: "20:45", odds: [1.19, 5.00, 10.0]),
+        Match(home: "Colonia", away: "Bayern Monaco", time: "20:30", odds: [6.50, 4.80, 1.24]),
+        Match(home: "Albacete", away: "Real Madrid", time: "21:00", odds: [9.00, 6.20, 1.24])
+    ]
 
     var body: some View {
-        NavigationView {
+        ZStack {
+            Color.black.ignoresSafeArea()
+
+            VStack(spacing: 0) {
+                header
+
+                if selectedTab == 0 {
+                    matchList
+                } else {
+                    placedBets
+                }
+
+                bottomBar
+            }
+
+            if !currentPicks.isEmpty {
+                floatingButton
+            }
+        }
+        .sheet(isPresented: $showSheet) {
+            BetSheet(
+                picks: $currentPicks,
+                balance: $balance
+            ) { slip in
+                slips.insert(slip, at: 0)
+            }
+        }
+        .sheet(item: $showSlipDetail) { slip in
+            SlipDetailView(slip: slip)
+        }
+        .onChange(of: balance) {
+            UserDefaults.standard.set($0, forKey: "balance")
+        }
+    }
+
+    // MARK: HEADER
+
+    private var header: some View {
+        HStack {
+            Text(selectedTab == 0 ? "Calendario" : "Piazzate")
+                .font(.largeTitle.bold())
+                .foregroundColor(.white)
+
+            Spacer()
+
+            Text("€\(balance, specifier: "%.2f")")
+                .foregroundColor(.accentCyan)
+                .bold()
+        }
+        .padding()
+    }
+
+    // MARK: MATCH LIST
+
+    private var matchList: some View {
+        ScrollView {
             VStack(spacing: 16) {
-
-                // 🔹 CALENDARIO PICCOLO
-                SmallCalendarView(selectedDate: $selectedDate)
-
-                // 🔹 ELENCO PARTITE DEL GIORNO SELEZIONATO
-                List {
-                    // ForEach con identificazione esplicita
-                    ForEach(generateMatches(for: selectedDate)) { match in
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("\(match.home) - \(match.away)")
-                                .font(.headline)
-
-                            HStack(spacing: 12) {
-                                ForEach(0..<3, id: \.self) { index in
-                                    Button {
-                                        // Eventuale gestione interazione utente
-                                    } label: {
-                                        Text(match.odds[index], specifier: "%.2f")
-                                            .frame(maxWidth: .infinity)
-                                            .padding(.vertical, 8)
-                                            .background(Color(hex: "44E0CB").opacity(0.15))
-                                            .cornerRadius(8)
-                                    }
-                                }
-                            }
+                ForEach(matches) { match in
+                    VStack(spacing: 10) {
+                        HStack {
+                            Text(match.home)
+                            Spacer()
+                            Text(match.time).bold()
+                            Spacer()
+                            Text(match.away)
                         }
-                        .padding(.vertical, 6)
+                        .foregroundColor(.white)
+
+                        HStack(spacing: 10) {
+                            oddButton("1", match, .home, match.odds[0])
+                            oddButton("X", match, .draw, match.odds[1])
+                            oddButton("2", match, .away, match.odds[2])
+                        }
+                    }
+                    .padding()
+                    .background(Color.white.opacity(0.06))
+                    .cornerRadius(16)
+                }
+            }
+            .padding()
+        }
+    }
+
+    private func oddButton(_ label: String, _ match: Match, _ outcome: MatchOutcome, _ odd: Double) -> some View {
+        Button {
+            if !currentPicks.contains(where: { $0.match.id == match.id }) {
+                currentPicks.append(BetPick(match: match, outcome: outcome, odd: odd))
+            }
+        } label: {
+            VStack {
+                Text(label).bold()
+                Text(String(format: "%.2f", odd)).font(.caption)
+            }
+            .foregroundColor(.black)
+            .frame(maxWidth: .infinity)
+            .padding(8)
+            .background(Color.accentCyan)
+            .cornerRadius(12)
+        }
+    }
+
+    // MARK: PLACED BETS
+
+    private var placedBets: some View {
+        ScrollView {
+            VStack(spacing: 12) {
+                if slips.isEmpty {
+                    Text("Nessuna scommessa piazzata")
+                        .foregroundColor(.gray)
+                        .padding()
+                } else {
+                    ForEach(slips) { slip in
+                        Button {
+                            showSlipDetail = slip
+                        } label: {
+                            VStack(alignment: .leading) {
+                                Text("Quota \(slip.totalOdd, specifier: "%.2f")")
+                                    .foregroundColor(.accentCyan)
+                                Text("Puntata €\(slip.stake, specifier: "%.2f")")
+                                    .foregroundColor(.white)
+                                Text("Vincita potenziale €\(slip.potentialWin, specifier: "%.2f")")
+                                    .foregroundColor(.gray)
+                                    .font(.caption)
+                            }
+                            .padding()
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Color.white.opacity(0.06))
+                            .cornerRadius(14)
+                        }
                     }
                 }
-                .listStyle(.plain)
+            }
+            .padding()
+        }
+    }
+
+    // MARK: BOTTOM BAR
+
+    private var bottomBar: some View {
+        HStack {
+            bottomItem("calendar", "Calendario", 0)
+            Spacer()
+            bottomItem("list.bullet", "Piazzate", 1)
+        }
+        .padding()
+        .background(.ultraThinMaterial)
+        .cornerRadius(26)
+        .padding(.horizontal)
+        .padding(.bottom, 8)
+    }
+
+    private func bottomItem(_ icon: String, _ title: String, _ index: Int) -> some View {
+        Button {
+            selectedTab = index
+        } label: {
+            VStack {
+                Image(systemName: icon)
+                Text(title).font(.caption)
+            }
+            .foregroundColor(selectedTab == index ? .accentCyan : .white)
+        }
+    }
+
+    // MARK: FLOATING BUTTON
+
+    private var floatingButton: some View {
+        VStack {
+            Spacer()
+            HStack {
+                Spacer()
+                Button {
+                    showSheet = true
+                } label: {
+                    Image(systemName: "list.bullet.rectangle")
+                        .foregroundColor(.black)
+                        .padding(16)
+                        .background(Color.accentCyan)
+                        .clipShape(Circle())
+                        .shadow(radius: 10)
+                }
+                .padding(.trailing, 20)
+                .padding(.bottom, 90)
+            }
+        }
+    }
+}
+
+// MARK: - BET SHEET
+
+struct BetSheet: View {
+
+    @Binding var picks: [BetPick]
+    @Binding var balance: Double
+    let onConfirm: (BetSlip) -> Void
+
+    @State private var stake: Double = 1
+
+    private var totalOdd: Double {
+        picks.map { $0.odd }.reduce(1, *)
+    }
+
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+
+            VStack(spacing: 16) {
+                Capsule().fill(Color.gray).frame(width: 40, height: 5)
+
+                ForEach(picks) { pick in
+                    HStack {
+                        Text("\(pick.match.home) - \(pick.match.away)")
+                            .foregroundColor(.white)
+                        Spacer()
+                        Button {
+                            picks.removeAll { $0.id == pick.id }
+                        } label: {
+                            Image(systemName: "trash")
+                                .foregroundColor(.red)
+                        }
+                    }
+                }
+
+                Text("Importo €\(stake, specifier: "%.2f")")
+                    .foregroundColor(.white)
+
+                Slider(value: $stake, in: 1...min(balance, 500), step: 1)
+                    .accentColor(.accentCyan)
+
+                Button("Conferma selezione") {
+                    let slip = BetSlip(
+                        picks: picks,
+                        stake: stake,
+                        totalOdd: totalOdd,
+                        potentialWin: stake * totalOdd
+                    )
+                    balance -= stake
+                    picks.removeAll()
+                    onConfirm(slip)
+                }
+                .padding()
+                .frame(maxWidth: .infinity)
+                .background(Color.green)
+                .foregroundColor(.black)
+                .cornerRadius(16)
 
                 Spacer()
             }
-            .padding(.top, 8)
-            .navigationTitle("Serie A")
+            .padding()
         }
-    }
-
-    // MARK: - GENERA PARTITE
-
-    func generateMatches(for date: Date) -> [Match] {
-        // Calcolo semplificato delle partite del giorno
-        let day = Calendar.current.component(.day, from: date)
-
-        return [
-            Match(home: "Napoli", away: "Roma", odds: randomOdds(seed: day)),
-            Match(home: "Milan", away: "Inter", odds: randomOdds(seed: day + 1)),
-            Match(home: "Juventus", away: "Atalanta", odds: randomOdds(seed: day + 2))
-        ]
-    }
-
-    // Funzione per generare quote casuali
-    func randomOdds(seed: Int) -> [Double] {
-        // Generatore prevedibile per testabilità
-        srand48(seed)
-        return [
-            Double(drand48() * 1.5 + 1.5),
-            Double(drand48() * 1.2 + 2.8),
-            Double(drand48() * 2.5 + 2.0)
-        ]
     }
 }
 
-// MARK: - VISTA CALENDARIO PICCOLO
+// MARK: - SLIP DETAIL
 
-struct SmallCalendarView: View {
-
-    @Binding var selectedDate: Date
-
-    private let calendar = Calendar.current
-    private let range = -1...1
+struct SlipDetailView: View {
+    let slip: BetSlip
 
     var body: some View {
-        HStack(spacing: 16) {
-            ForEach(range, id: \.self) { offset in
-                let date = calendar.date(byAdding: .day, value: offset, to: Date())!
+        ZStack {
+            Color.black.ignoresSafeArea()
 
-                VStack(spacing: 6) {
-                    Text(dayName(from: date))
-                        .font(.caption2)
-                        .foregroundColor(.gray)
+            VStack(spacing: 12) {
+                Text("Dettaglio scommessa")
+                    .foregroundColor(.white)
+                    .font(.headline)
 
-                    Text(dayNumber(from: date))
-                        .font(.headline)
-                        .frame(width: 36, height: 36)
-                        .background(
-                            Circle()
-                                .fill(isSameDay(date) ? Color(hex: "44E0CB") : .clear)
-                        )
-                        .foregroundColor(isSameDay(date) ? .white : .primary)
+                ForEach(slip.picks) { pick in
+                    Text("\(pick.match.home) - \(pick.match.away) | \(pick.outcome.rawValue)")
+                        .foregroundColor(.white)
                 }
-                .onTapGesture {
-                    selectedDate = date
-                }
+
+                Text("Quota: \(slip.totalOdd, specifier: "%.2f")")
+                Text("Puntata: €\(slip.stake, specifier: "%.2f")")
+                Text("Vincita potenziale: €\(slip.potentialWin, specifier: "%.2f")")
             }
+            .foregroundColor(.accentCyan)
+            .padding()
         }
-        .padding(.vertical, 6)
     }
-
-    private func isSameDay(_ date: Date) -> Bool {
-        calendar.isDate(date, inSameDayAs: selectedDate)
-    }
-
-    private func dayNumber(from date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "d"
-        return formatter.string(from: date)
-    }
-
-    private func dayName(from date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "it_IT")
-        formatter.dateFormat = "EEE"
-        return formatter.string(from: date).uppercased()
-    }
-}
-
-// MARK: - ESTENSIONE COLORI
-
-extension Color {
-    init(hex: String) {
-        let hex = hex.trimmingCharacters(in: .alphanumerics.inverted)
-        var int: UInt64 = 0
-        Scanner(string: hex).scanHexInt64(&int)
-
-        let r = Double((int >> 16) & 0xFF) / 255
-        let g = Double((int >> 8) & 0xFF) / 255
-        let b = Double(int & 0xFF) / 255
-
-        self.init(red: r, green: g, blue: b)
-    }
-}
-
-// MARK: - PREVIEW
-
-#Preview {
-    ContentView()
 }
