@@ -2,7 +2,13 @@
 //  ContentView.swift
 //  SportPredix
 //
-//  Versione unica con MVVM, EV, persistenza schedine
+//  Tutto in un unico file, con:
+//  - MVVM
+//  - Calendario 3 giorni (ieri/oggi/domani) selezionabile
+//  - 12 partite al giorno generate da Serie A, Premier, Liga, Bundesliga
+//  - Toolbar con 3 tab: Calendario, Piazzate, Profilo
+//  - Pagina profilo con nome salvato in UserDefaults
+//  - Saluto "Ciao <nome>" in home
 //
 
 import SwiftUI
@@ -93,20 +99,111 @@ final class BettingViewModel: ObservableObject {
     @Published var currentPicks: [BetPick] = []
     @Published var slips: [BetSlip] = []
 
-    let matches: [Match] = [
-        Match(home: "Napoli", away: "Parma", time: "18:30", odds: [1.33, 4.20, 7.00]),
-        Match(home: "Inter", away: "Lecce", time: "20:45", odds: [1.19, 5.00, 10.0]),
-        Match(home: "Colonia", away: "Bayern Monaco", time: "20:30", odds: [6.50, 4.80, 1.24]),
-        Match(home: "Albacete", away: "Real Madrid", time: "21:00", odds: [9.00, 6.20, 1.24])
-    ]
+    // Calendario: 0 = ieri, 1 = oggi, 2 = domani
+    @Published var selectedDayIndex: Int = 1
+    @Published var days: [Date] = []
+
+    // Partite per giorno
+    @Published private(set) var matchesByDate: [Date: [Match]] = [:]
+
+    // Nome utente
+    @Published var userName: String {
+        didSet {
+            UserDefaults.standard.set(userName, forKey: "userName")
+        }
+    }
 
     private let slipsKey = "savedSlips"
+
+    // Squadre per campionati
+    private let serieA = ["Inter", "Milan", "Juventus", "Napoli", "Roma", "Lazio", "Atalanta", "Fiorentina", "Bologna", "Torino"]
+    private let premierLeague = ["Manchester City", "Liverpool", "Arsenal", "Chelsea", "Manchester United", "Tottenham", "Newcastle", "Aston Villa"]
+    private let liga = ["Real Madrid", "Barcelona", "Atletico Madrid", "Sevilla", "Valencia", "Villarreal", "Real Sociedad", "Betis"]
+    private let bundesliga = ["Bayern Monaco", "Borussia Dortmund", "RB Lipsia", "Leverkusen", "Union Berlin", "Eintracht Francoforte", "Wolfsburg", "Stoccarda"]
 
     init() {
         let savedBalance = UserDefaults.standard.double(forKey: "balance")
         self.balance = savedBalance == 0 ? 1000 : savedBalance
+
         self.slips = loadSlips()
+        self.userName = UserDefaults.standard.string(forKey: "userName") ?? ""
+
+        setupDays()
+        generateMatchesForAllDays()
     }
+
+    // MARK: - Calendario
+
+    private func startOfDay(_ date: Date) -> Date {
+        Calendar.current.startOfDay(for: date)
+    }
+
+    private func setupDays() {
+        let today = startOfDay(Date())
+        let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: today)!
+        let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: today)!
+        self.days = [yesterday, today, tomorrow]
+        self.selectedDayIndex = 1
+    }
+
+    var selectedDate: Date {
+        days[selectedDayIndex]
+    }
+
+    var matchesForSelectedDay: [Match] {
+        matchesByDate[startOfDay(selectedDate)] ?? []
+    }
+
+    func refreshIfNeeded() {
+        // Se il "oggi" salvato non è più oggi, rigenera i giorni
+        let today = startOfDay(Date())
+        if startOfDay(days[1]) != today {
+            setupDays()
+            generateMatchesForAllDays()
+        }
+    }
+
+    private func generateMatchesForAllDays() {
+        for day in days {
+            matchesByDate[startOfDay(day)] = generateMatches(for: day)
+        }
+    }
+
+    private func generateMatches(for date: Date) -> [Match] {
+        var allTeams = serieA + premierLeague + liga + bundesliga
+        allTeams.shuffle()
+
+        var matches: [Match] = []
+        let numberOfMatches = 12
+
+        for i in 0..<numberOfMatches {
+            if allTeams.count < 2 { break }
+            let home = allTeams.removeFirst()
+            let away = allTeams.removeFirst()
+
+            let hour = 18 + (i % 5) // tra 18 e 22
+            let minute = (i * 15) % 60
+            let timeString = String(format: "%02d:%02d", hour, minute)
+
+            let odds = generateOdds()
+            let match = Match(home: home, away: away, time: timeString, odds: odds)
+            matches.append(match)
+        }
+
+        return matches
+    }
+
+    private func generateOdds() -> [Double] {
+        // Quote realistiche 1X2
+        let base = Double.random(in: 1.20...2.20)
+        let draw = Double.random(in: 2.80...4.50)
+        let away = Double.random(in: 2.00...6.50)
+
+        let odds = [base, draw, away].shuffled()
+        return odds.map { Double(round(100 * $0) / 100) }
+    }
+
+    // MARK: - Logica scommesse
 
     var totalOdd: Double {
         currentPicks.map { $0.odd }.reduce(1, *)
@@ -164,16 +261,21 @@ struct ContentView: View {
 
                 if vm.selectedTab == 0 {
                     matchList
-                } else {
+                } else if vm.selectedTab == 1 {
                     placedBets
+                } else {
+                    profileView
                 }
 
                 bottomBar
             }
 
-            if !vm.currentPicks.isEmpty {
+            if !vm.currentPicks.isEmpty && vm.selectedTab == 0 {
                 floatingButton
             }
+        }
+        .onAppear {
+            vm.refreshIfNeeded()
         }
         .sheet(isPresented: $vm.showSheet) {
             BetSheet(
@@ -192,18 +294,83 @@ struct ContentView: View {
     // MARK: HEADER
 
     private var header: some View {
-        HStack {
-            Text(vm.selectedTab == 0 ? "Calendario" : "Piazzate")
-                .font(.largeTitle.bold())
-                .foregroundColor(.white)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(vm.selectedTab == 0 ? "Calendario" : (vm.selectedTab == 1 ? "Piazzate" : "Profilo"))
+                    .font(.largeTitle.bold())
+                    .foregroundColor(.white)
 
-            Spacer()
+                Spacer()
 
-            Text("€\(vm.balance, specifier: "%.2f")")
-                .foregroundColor(.accentCyan)
-                .bold()
+                Text("€\(vm.balance, specifier: "%.2f")")
+                    .foregroundColor(.accentCyan)
+                    .bold()
+            }
+
+            if vm.selectedTab == 0 {
+                Text("Ciao \(vm.userName.isEmpty ? "Scommettitore" : vm.userName)")
+                    .foregroundColor(.gray)
+                    .font(.subheadline)
+
+                smallCalendar
+            }
+
         }
         .padding()
+    }
+
+    // MARK: SMALL CALENDAR
+
+    private var smallCalendar: some View {
+        HStack(spacing: 8) {
+            ForEach(0..<vm.days.count, id: \.self) { index in
+                let date = vm.days[index]
+                Button {
+                    vm.selectedDayIndex = index
+                } label: {
+                    VStack(spacing: 2) {
+                        Text(dayLabel(for: date, index: index))
+                            .font(.caption2)
+                            .foregroundColor(.gray)
+                        Text(dayNumber(for: date))
+                            .font(.headline)
+                        Text(monthShort(for: date))
+                            .font(.caption2)
+                    }
+                    .padding(8)
+                    .frame(maxWidth: .infinity)
+                    .background(vm.selectedDayIndex == index ? Color.accentCyan.opacity(0.2) : Color.white.opacity(0.06))
+                    .cornerRadius(10)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10)
+                            .stroke(vm.selectedDayIndex == index ? Color.accentCyan : Color.clear, lineWidth: 1)
+                    )
+                    .foregroundColor(.white)
+                }
+            }
+        }
+    }
+
+    private func dayLabel(for date: Date, index: Int) -> String {
+        switch index {
+        case 0: return "Ieri"
+        case 1: return "Oggi"
+        case 2: return "Domani"
+        default: return ""
+        }
+    }
+
+    private func dayNumber(for date: Date) -> String {
+        let df = DateFormatter()
+        df.dateFormat = "d"
+        return df.string(from: date)
+    }
+
+    private func monthShort(for date: Date) -> String {
+        let df = DateFormatter()
+        df.locale = Locale(identifier: "it_IT")
+        df.dateFormat = "MMM"
+        return df.string(from: date)
     }
 
     // MARK: MATCH LIST
@@ -211,8 +378,14 @@ struct ContentView: View {
     private var matchList: some View {
         ScrollView {
             VStack(spacing: 16) {
-                ForEach(vm.matches) { match in
-                    matchCard(match)
+                if vm.matchesForSelectedDay.isEmpty {
+                    Text("Nessuna partita per questo giorno")
+                        .foregroundColor(.gray)
+                        .padding()
+                } else {
+                    ForEach(vm.matchesForSelectedDay) { match in
+                        matchCard(match)
+                    }
                 }
             }
             .padding()
@@ -302,6 +475,12 @@ struct ContentView: View {
         }
     }
 
+    // MARK: PROFILE VIEW
+
+    private var profileView: some View {
+        ProfileView(userName: $vm.userName, balance: $vm.balance)
+    }
+
     // MARK: BOTTOM BAR
 
     private var bottomBar: some View {
@@ -309,6 +488,8 @@ struct ContentView: View {
             bottomItem("calendar", "Calendario", 0)
             Spacer()
             bottomItem("list.bullet", "Piazzate", 1)
+            Spacer()
+            bottomItem("person.crop.circle", "Profilo", 2)
         }
         .padding()
         .background(.ultraThinMaterial)
@@ -450,6 +631,50 @@ struct SlipDetailView: View {
                     .foregroundColor(slip.expectedValue >= 0 ? .green : .red)
             }
             .foregroundColor(.accentCyan)
+            .padding()
+        }
+    }
+}
+
+// MARK: - PROFILE VIEW
+
+struct ProfileView: View {
+    @Binding var userName: String
+    @Binding var balance: Double
+
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+
+            VStack(alignment: .leading, spacing: 20) {
+                Text("Profilo")
+                    .font(.title.bold())
+                    .foregroundColor(.white)
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Nome utente")
+                        .foregroundColor(.gray)
+                        .font(.subheadline)
+
+                    TextField("Inserisci il tuo nome", text: $userName)
+                        .padding()
+                        .background(Color.white.opacity(0.08))
+                        .cornerRadius(12)
+                        .foregroundColor(.white)
+                }
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Saldo attuale")
+                        .foregroundColor(.gray)
+                        .font(.subheadline)
+
+                    Text("€\(balance, specifier: "%.2f")")
+                        .foregroundColor(.accentCyan)
+                        .font(.title2.bold())
+                }
+
+                Spacer()
+            }
             .padding()
         }
     }
