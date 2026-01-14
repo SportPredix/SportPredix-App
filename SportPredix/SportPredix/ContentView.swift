@@ -2,7 +2,7 @@
 //  ContentView.swift
 //  SportPredix
 //
-//  Versione unica con MVVM, EV, persistenza schedine + PROFILO
+//  Versione unica con MVVM, EV, persistenza schedine + PROFILO + CALENDARIO DINAMICO
 //
 
 import SwiftUI
@@ -27,14 +27,6 @@ struct Match: Identifiable, Codable {
     let away: String
     let time: String
     let odds: [Double]
-
-    init(id: UUID = UUID(), home: String, away: String, time: String, odds: [Double]) {
-        self.id = id
-        self.home = home
-        self.away = away
-        self.time = time
-        self.odds = odds
-    }
 }
 
 struct BetPick: Identifiable, Codable {
@@ -42,13 +34,6 @@ struct BetPick: Identifiable, Codable {
     let match: Match
     let outcome: MatchOutcome
     let odd: Double
-
-    init(id: UUID = UUID(), match: Match, outcome: MatchOutcome, odd: Double) {
-        self.id = id
-        self.match = match
-        self.outcome = outcome
-        self.odd = odd
-    }
 }
 
 struct BetSlip: Identifiable, Codable {
@@ -59,55 +44,40 @@ struct BetSlip: Identifiable, Codable {
     let potentialWin: Double
     let date: Date
 
-    init(id: UUID = UUID(), picks: [BetPick], stake: Double, totalOdd: Double, potentialWin: Double, date: Date = Date()) {
-        self.id = id
-        self.picks = picks
-        self.stake = stake
-        self.totalOdd = totalOdd
-        self.potentialWin = potentialWin
-        self.date = date
-    }
-
-    var impliedProbability: Double {
-        1 / totalOdd
-    }
-
-    var expectedValue: Double {
-        potentialWin * impliedProbability - stake
-    }
+    var impliedProbability: Double { 1 / totalOdd }
+    var expectedValue: Double { potentialWin * impliedProbability - stake }
 }
 
 // MARK: - VIEW MODEL
 
 final class BettingViewModel: ObservableObject {
+
     @Published var selectedTab = 0
+    @Published var selectedDayIndex = 1   // 0 = ieri, 1 = oggi, 2 = domani
+
     @Published var showSheet = false
     @Published var showSlipDetail: BetSlip?
 
     @Published var balance: Double {
-        didSet {
-            UserDefaults.standard.set(balance, forKey: "balance")
-        }
+        didSet { UserDefaults.standard.set(balance, forKey: "balance") }
     }
 
-    // PROFILO
     @Published var userName: String {
-        didSet {
-            UserDefaults.standard.set(userName, forKey: "userName")
-        }
+        didSet { UserDefaults.standard.set(userName, forKey: "userName") }
     }
 
     @Published var currentPicks: [BetPick] = []
     @Published var slips: [BetSlip] = []
 
-    let matches: [Match] = [
-        Match(home: "Napoli", away: "Parma", time: "18:30", odds: [1.33, 4.20, 7.00]),
-        Match(home: "Inter", away: "Lecce", time: "20:45", odds: [1.19, 5.00, 10.0]),
-        Match(home: "Colonia", away: "Bayern Monaco", time: "20:30", odds: [6.50, 4.80, 1.24]),
-        Match(home: "Albacete", away: "Real Madrid", time: "21:00", odds: [9.00, 6.20, 1.24])
-    ]
-
     private let slipsKey = "savedSlips"
+
+    // Squadre per generazione dinamica
+    private let teams = [
+        "Napoli","Inter","Milan","Juventus","Roma","Lazio",
+        "Liverpool","Chelsea","Arsenal","Man City","Tottenham",
+        "Real Madrid","Barcellona","Atletico","Valencia",
+        "Bayern","Dortmund","Leipzig","Leverkusen"
+    ]
 
     init() {
         let savedBalance = UserDefaults.standard.double(forKey: "balance")
@@ -117,13 +87,57 @@ final class BettingViewModel: ObservableObject {
         self.slips = loadSlips()
     }
 
-    var totalOdd: Double {
-        currentPicks.map { $0.odd }.reduce(1, *)
+    // MARK: - CALENDARIO
+
+    func dateForIndex(_ index: Int) -> Date {
+        Calendar.current.date(byAdding: .day, value: index - 1, to: Date())!
     }
+
+    func formattedDay(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.dateFormat = "d"
+        return f.string(from: date)
+    }
+
+    func formattedMonth(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.dateFormat = "MMM"
+        return f.string(from: date)
+    }
+
+    // MARK: - GENERAZIONE PARTITE DINAMICHE
+
+    func matchesForSelectedDay() -> [Match] {
+        var result: [Match] = []
+
+        for _ in 0..<12 {
+            let home = teams.randomElement()!
+            var away = teams.randomElement()!
+            while away == home { away = teams.randomElement()! }
+
+            let hour = Int.random(in: 12...22)
+            let minute = ["00","15","30","45"].randomElement()!
+            let time = "\(hour):\(minute)"
+
+            let odds = [
+                Double.random(in: 1.20...2.50),
+                Double.random(in: 2.80...4.50),
+                Double.random(in: 2.50...7.00)
+            ]
+
+            result.append(Match(id: UUID(), home: home, away: away, time: time, odds: odds))
+        }
+
+        return result
+    }
+
+    // MARK: - SCOMMESSE
+
+    var totalOdd: Double { currentPicks.map { $0.odd }.reduce(1, *) }
 
     func addPick(match: Match, outcome: MatchOutcome, odd: Double) {
         guard !currentPicks.contains(where: { $0.match.id == match.id }) else { return }
-        currentPicks.append(BetPick(match: match, outcome: outcome, odd: odd))
+        currentPicks.append(BetPick(id: UUID(), match: match, outcome: outcome, odd: odd))
     }
 
     func removePick(_ pick: BetPick) {
@@ -132,10 +146,12 @@ final class BettingViewModel: ObservableObject {
 
     func confirmSlip(stake: Double) {
         let slip = BetSlip(
+            id: UUID(),
             picks: currentPicks,
             stake: stake,
             totalOdd: totalOdd,
-            potentialWin: stake * totalOdd
+            potentialWin: stake * totalOdd,
+            date: Date()
         )
         balance -= stake
         currentPicks.removeAll()
@@ -151,9 +167,7 @@ final class BettingViewModel: ObservableObject {
 
     private func loadSlips() -> [BetSlip] {
         guard let data = UserDefaults.standard.data(forKey: slipsKey),
-              let decoded = try? JSONDecoder().decode([BetSlip].self, from: data) else {
-            return []
-        }
+              let decoded = try? JSONDecoder().decode([BetSlip].self, from: data) else { return [] }
         return decoded
     }
 }
@@ -169,9 +183,11 @@ struct ContentView: View {
             Color.black.ignoresSafeArea()
 
             VStack(spacing: 0) {
+
                 header
 
                 if vm.selectedTab == 0 {
+                    calendarBar
                     matchList
                 } else if vm.selectedTab == 1 {
                     placedBets
@@ -191,13 +207,9 @@ struct ContentView: View {
                 picks: $vm.currentPicks,
                 balance: $vm.balance,
                 totalOdd: vm.totalOdd
-            ) { stake in
-                vm.confirmSlip(stake: stake)
-            }
+            ) { stake in vm.confirmSlip(stake: stake) }
         }
-        .sheet(item: $vm.showSlipDetail) { slip in
-            SlipDetailView(slip: slip)
-        }
+        .sheet(item: $vm.showSlipDetail) { SlipDetailView(slip: $0) }
     }
 
     // MARK: HEADER
@@ -218,12 +230,41 @@ struct ContentView: View {
         .padding()
     }
 
+    // MARK: CALENDAR BAR
+
+    private var calendarBar: some View {
+        HStack(spacing: 12) {
+            ForEach(0..<3) { index in
+                let date = vm.dateForIndex(index)
+
+                VStack(spacing: 2) {
+                    Text(vm.formattedDay(date))
+                        .font(.title3.bold())
+                    Text(vm.formattedMonth(date))
+                        .font(.caption)
+                }
+                .foregroundColor(.white)
+                .padding(.vertical, 8)
+                .padding(.horizontal, 16)
+                .background(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(vm.selectedDayIndex == index ? Color.accentCyan : Color.white.opacity(0.2), lineWidth: 2)
+                )
+                .onTapGesture { vm.selectedDayIndex = index }
+            }
+        }
+        .padding(.horizontal)
+        .padding(.bottom, 8)
+    }
+
     // MARK: MATCH LIST
 
     private var matchList: some View {
-        ScrollView {
+        let matches = vm.matchesForSelectedDay()
+
+        return ScrollView {
             VStack(spacing: 16) {
-                ForEach(vm.matches) { match in
+                ForEach(matches) { match in
                     matchCard(match)
                 }
             }
@@ -234,15 +275,13 @@ struct ContentView: View {
     private func matchCard(_ match: Match) -> some View {
         VStack(spacing: 10) {
             HStack {
-                Text(match.home)
-                    .font(.headline)
+                Text(match.home).font(.headline)
                 Spacer()
                 Text(match.time)
                     .font(.subheadline.bold())
                     .foregroundColor(.accentCyan)
                 Spacer()
-                Text(match.away)
-                    .font(.headline)
+                Text(match.away).font(.headline)
             }
             .foregroundColor(.white)
 
@@ -290,9 +329,7 @@ struct ContentView: View {
                         .padding()
                 } else {
                     ForEach(vm.slips) { slip in
-                        Button {
-                            vm.showSlipDetail = slip
-                        } label: {
+                        Button { vm.showSlipDetail = slip } label: {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text("Quota \(slip.totalOdd, specifier: "%.2f")")
                                     .foregroundColor(.accentCyan)
@@ -332,9 +369,7 @@ struct ContentView: View {
     }
 
     private func bottomItem(_ icon: String, _ title: String, _ index: Int) -> some View {
-        Button {
-            vm.selectedTab = index
-        } label: {
+        Button { vm.selectedTab = index } label: {
             VStack {
                 Image(systemName: icon)
                 Text(title).font(.caption)
@@ -351,9 +386,7 @@ struct ContentView: View {
             HStack {
                 Spacer()
                 ZStack(alignment: .topTrailing) {
-                    Button {
-                        vm.showSheet = true
-                    } label: {
+                    Button { vm.showSheet = true } label: {
                         Image(systemName: "list.bullet.rectangle")
                             .foregroundColor(.black)
                             .padding(16)
