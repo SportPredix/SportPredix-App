@@ -37,7 +37,7 @@ struct ContentView: View {
                                 .font(.headline)
 
                             HStack(spacing: 12) {
-                                ForEach(0..<3) { index in
+                                ForEach(0..<3, id: \.self) { index in
                                     Button {
                                         // in futuro: aggiunta pronostico
                                     } label: {
@@ -78,9 +78,9 @@ struct ContentView: View {
     func randomOdds(seed: Int) -> [Double] {
         srand48(seed)
         return [
-            Double.random(in: 1.5...3.0),
-            Double.random(in: 2.8...4.0),
-            Double.random(in: 2.0...4.5)
+            Double(drand48() * 1.5 + 1.5),
+            Double(drand48() * 1.2 + 2.8),
+            Double(drand48() * 2.5 + 2.0)
         ]
     }
 }
@@ -97,7 +97,7 @@ struct SmallCalendarView: View {
     var body: some View {
         HStack(spacing: 16) {
             ForEach(range, id: \.self) { offset in
-                let date = calendar.date(byAdding: .day, value: offset, to: Date())!
+                let date = calendar.date(byAdding: .day, value: offset, to: selectedDate)!
 
                 VStack(spacing: 6) {
                     Text(dayName(from: date))
@@ -126,16 +126,16 @@ struct SmallCalendarView: View {
     }
 
     private func dayNumber(from date: Date) -> String {
-        let f = DateFormatter()
-        f.dateFormat = "d"
-        return f.string(from: date)
+        let formatter = DateFormatter()
+        formatter.dateFormat = "d"
+        return formatter.string(from: date)
     }
 
     private func dayName(from date: Date) -> String {
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "it_IT")
-        f.dateFormat = "EEE"
-        return f.string(from: date).uppercased()
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "it_IT")
+        formatter.dateFormat = "EEE"
+        return formatter.string(from: date).uppercased()
     }
 }
 
