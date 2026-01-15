@@ -115,8 +115,7 @@ final class BettingViewModel: ObservableObject {
         let f = DateFormatter()
         f.dateFormat = "MMM"
         return f.string(from: date)
-    }
-
+        }
     // MARK: - MATCH GENERATION (PERSISTENT)
 
     func generateMatchesForDate(_ date: Date) -> [Match] {
@@ -352,8 +351,7 @@ struct ContentView: View {
                 )
         )
     }
-
-    private func oddButton(_ label: String, _ match: Match, _ outcome: MatchOutcome, _ odd: Double, _ disabled: Bool) -> some View {
+        private func oddButton(_ label: String, _ match: Match, _ outcome: MatchOutcome, _ odd: Double, _ disabled: Bool) -> some View {
 
         Button {
             if !disabled {
@@ -467,7 +465,7 @@ struct ContentView: View {
     }
 }
 
-// MARK: - BET SHEET
+// MARK: - BET SHEET (VERSIONE MIGLIORATA)
 
 struct BetSheet: View {
 
@@ -478,44 +476,87 @@ struct BetSheet: View {
 
     @State private var stake: Double = 1
 
+    var impliedProbability: Double {
+        1 / totalOdd
+    }
+
+    var expectedValue: Double {
+        (stake * totalOdd * impliedProbability) - stake
+    }
+
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
 
-            VStack(spacing: 16) {
-                Capsule().fill(Color.gray).frame(width: 40, height: 5)
+            VStack(spacing: 20) {
+                Capsule()
+                    .fill(Color.gray)
+                    .frame(width: 40, height: 5)
+                    .padding(.top, 8)
 
-                ForEach(picks) { pick in
-                    HStack {
-                        Text("\(pick.match.home) - \(pick.match.away)")
-                            .foregroundColor(.white)
-                        Spacer()
-                        Button {
-                            picks.removeAll { $0.id == pick.id }
-                        } label: {
-                            Image(systemName: "trash")
-                                .foregroundColor(.red)
+                Text("Schedina selezionata")
+                    .font(.title2.bold())
+                    .foregroundColor(.accentCyan)
+
+                ScrollView {
+                    VStack(spacing: 12) {
+                        ForEach(picks) { pick in
+                            HStack {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("\(pick.match.home) - \(pick.match.away)")
+                                        .font(.headline)
+                                        .foregroundColor(.white)
+                                    Text("Esito: \(pick.outcome.rawValue) | Quota: \(pick.odd, specifier: "%.2f")")
+                                        .font(.subheadline)
+                                        .foregroundColor(.gray)
+                                }
+                                Spacer()
+                                Button {
+                                    picks.removeAll { $0.id == pick.id }
+                                } label: {
+                                    Image(systemName: "trash")
+                                        .foregroundColor(.red)
+                                }
+                            }
+                            .padding()
+                            .background(Color.white.opacity(0.08))
+                            .cornerRadius(12)
                         }
                     }
                 }
 
-                Text("Quota totale \(totalOdd, specifier: "%.2f")")
-                    .foregroundColor(.accentCyan)
+                VStack(spacing: 8) {
+                    Text("Quota totale: \(totalOdd, specifier: "%.2f")")
+                    Text("Probabilità implicita: \((impliedProbability * 100), specifier: "%.1f")%")
+                    Text("Expected Value: €\(expectedValue, specifier: "%.2f")")
+                        .foregroundColor(expectedValue >= 0 ? .green : .red)
+                }
+                .font(.subheadline)
+                .foregroundColor(.accentCyan)
 
-                Text("Importo €\(stake, specifier: "%.2f")")
+                VStack(spacing: 8) {
+                    HStack {
+                        Text("Importo:")
+                        Spacer()
+                        Text("€\(stake, specifier: "%.2f")")
+                    }
                     .foregroundColor(.white)
 
-                Slider(value: $stake, in: 1...min(balance, 500), step: 1)
-                    .accentColor(.accentCyan)
-
-                Button("Conferma selezione") {
-                    onConfirm(stake)
+                    Slider(value: $stake, in: 1...min(balance, 500), step: 1)
+                        .accentColor(.accentCyan)
                 }
-                .padding()
-                .frame(maxWidth: .infinity)
-                .background(Color.green)
-                .foregroundColor(.black)
-                .cornerRadius(16)
+
+                Button(action: {
+                    onConfirm(stake)
+                }) {
+                    Text("Conferma schedina")
+                        .bold()
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.green)
+                        .foregroundColor(.black)
+                        .cornerRadius(16)
+                }
 
                 Spacer()
             }
@@ -556,6 +597,7 @@ struct SlipDetailView: View {
         }
     }
 }
+
 // MARK: - PROFILE VIEW
 
 struct ProfileView: View {
@@ -568,8 +610,6 @@ struct ProfileView: View {
             Color.black.ignoresSafeArea()
 
             VStack(alignment: .leading, spacing: 24) {
-
-    
 
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Nome utente")
