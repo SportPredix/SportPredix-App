@@ -115,8 +115,8 @@ final class BettingViewModel: ObservableObject {
         let f = DateFormatter()
         f.dateFormat = "MMM"
         return f.string(from: date)
-        }
-    // MARK: - MATCH GENERATION (PERSISTENT)
+    }
+        // MARK: - MATCH GENERATION (PERSISTENT)
 
     func generateMatchesForDate(_ date: Date) -> [Match] {
         var result: [Match] = []
@@ -474,7 +474,11 @@ struct BetSheet: View {
     let totalOdd: Double
     let onConfirm: (Double) -> Void
 
-    @State private var stake: Double = 1
+    @State private var stakeText: String = "1"
+
+    var stake: Double {
+        Double(stakeText.replacingOccurrences(of: ",", with: ".")) ?? 0
+    }
 
     var impliedProbability: Double {
         1 / totalOdd
@@ -534,19 +538,23 @@ struct BetSheet: View {
                 .font(.subheadline)
                 .foregroundColor(.accentCyan)
 
-                VStack(spacing: 8) {
-                    HStack {
-                        Text("Importo:")
-                        Spacer()
-                        Text("€\(stake, specifier: "%.2f")")
-                    }
-                    .foregroundColor(.white)
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Importo:")
+                        .foregroundColor(.white)
 
-                    Slider(value: $stake, in: 1...min(balance, 500), step: 1)
-                        .accentColor(.accentCyan)
+                    TextField("Inserisci importo", text: $stakeText)
+                        .keyboardType(.decimalPad)
+                        .padding()
+                        .background(Color.white.opacity(0.08))
+                        .cornerRadius(12)
+                        .foregroundColor(.white)
+
+                    Text("€\(stake, specifier: "%.2f")")
+                        .foregroundColor(.accentCyan)
                 }
 
                 Button(action: {
+                    guard stake > 0, stake <= balance else { return }
                     onConfirm(stake)
                 }) {
                     Text("Conferma schedina")
