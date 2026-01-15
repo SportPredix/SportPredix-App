@@ -97,7 +97,7 @@ final class BettingViewModel: ObservableObject {
         "Napoli","Inter","Milan","Juventus","Roma","Lazio",
         "Liverpool","Chelsea","Arsenal","Man City","Tottenham",
         "Real Madrid","Barcellona","Atletico","Valencia",
-        "Bayern","Dortmund","Leipzig","Leverkusen"
+        "Bayern","Dortmund","Leipzig","Leverkusen","Dio Cane"
     ]
 
     init() {
@@ -135,7 +135,7 @@ final class BettingViewModel: ObservableObject {
         return f.string(from: date)
     }
 
-    // MARK: - MATCH GENERATION (CON RISULTATO CASUALE)
+    // MARK: - MATCH GENERATION
 
     func generateMatchesForDate(_ date: Date) -> [Match] {
         var result: [Match] = []
@@ -265,12 +265,11 @@ final class BettingViewModel: ObservableObject {
         return decoded
     }
 
-    // MARK: - VALUTAZIONE SCHEDINE
+    // MARK: - VALUTAZIONE
 
     func evaluateSlip(_ slip: BetSlip) -> BetSlip {
         var updatedSlip = slip
 
-        // già valutata → non tocco saldo né stato
         if slip.isEvaluated { return slip }
 
         let allCorrect = slip.picks.allSatisfy { pick in
@@ -307,19 +306,10 @@ final class BettingViewModel: ObservableObject {
 
     // MARK: - STATISTICHE
 
-    var totalBetsCount: Int {
-        slips.count
-    }
-
-    var totalWins: Int {
-        slips.filter { $0.isWon == true }.count
-    }
-
-    var totalLosses: Int {
-        slips.filter { $0.isWon == false }.count
-    }
+    var totalBetsCount: Int { slips.count }
+    var totalWins: Int { slips.filter { $0.isWon == true }.count }
+    var totalLosses: Int { slips.filter { $0.isWon == false }.count }
 }
-
 // MARK: - MAIN VIEW
 
 struct ContentView: View {
@@ -330,39 +320,39 @@ struct ContentView: View {
     var body: some View {
         NavigationView {
             ZStack {
-            Color.black.ignoresSafeArea()
+                Color.black.ignoresSafeArea()
 
-            VStack(spacing: 0) {
+                VStack(spacing: 0) {
 
-                header
+                    header
 
-                if vm.selectedTab == 0 {
-                    calendarBar
-                    matchList
-                } else if vm.selectedTab == 1 {
-                    placedBets
-                        .onAppear { vm.evaluateAllSlips() }
-                } else {
-                    ProfileView(userName: $vm.userName, balance: $vm.balance)
-                        .environmentObject(vm)
+                    if vm.selectedTab == 0 {
+                        calendarBar
+                        matchList
+                    } else if vm.selectedTab == 1 {
+                        placedBets
+                            .onAppear { vm.evaluateAllSlips() }
+                    } else {
+                        ProfileView(userName: $vm.userName, balance: $vm.balance)
+                            .environmentObject(vm)
+                    }
+
+                    bottomBar
                 }
 
-                bottomBar
+                if !vm.currentPicks.isEmpty {
+                    floatingButton
+                        .transition(.scale.combined(with: .opacity))
+                }
             }
-
-            if !vm.currentPicks.isEmpty {
-                floatingButton
-                    .transition(.scale.combined(with: .opacity))
+            .sheet(isPresented: $vm.showSheet) {
+                BetSheet(
+                    picks: $vm.currentPicks,
+                    balance: $vm.balance,
+                    totalOdd: vm.totalOdd
+                ) { stake in vm.confirmSlip(stake: stake) }
             }
-        }
-        .sheet(isPresented: $vm.showSheet) {
-            BetSheet(
-                picks: $vm.currentPicks,
-                balance: $vm.balance,
-                totalOdd: vm.totalOdd
-            ) { stake in vm.confirmSlip(stake: stake) }
-        }
-        .sheet(item: $vm.showSlipDetail) { SlipDetailView(slip: $0) }
+            .sheet(item: $vm.showSlipDetail) { SlipDetailView(slip: $0) }
         }
     }
 
@@ -419,12 +409,15 @@ struct ContentView: View {
             VStack(spacing: 16) {
                 ForEach(groupedMatches.keys.sorted(), id: \.self) { time in
                     VStack(spacing: 10) {
+
+                        // ORARIO A SINISTRA (MODIFICA RICHIESTA)
                         HStack {
-                            Spacer()
                             Text(time)
                                 .font(.headline)
                                 .foregroundColor(.accentCyan)
+                            Spacer()
                         }
+
                         ForEach(groupedMatches[time]!) { match in
                             matchCard(match, disabled: isYesterday)
                         }
@@ -552,7 +545,7 @@ struct ContentView: View {
         }
     }
 
-    // MARK: - BOTTOM BAR (ANIMATA)
+    // MARK: - BOTTOM BAR
 
     private var bottomBar: some View {
         ZStack {
@@ -611,7 +604,6 @@ struct ContentView: View {
         }
     }
 }
-
 // MARK: - BET SHEET
 
 struct BetSheet: View {
@@ -875,256 +867,35 @@ struct MatchDetailView: View {
             }
             .padding()
         }
-        .overlay(
-            Group {
-                if !vm.currentPicks.isEmpty {
-                    VStack {
-                        Spacer()
-                        HStack {
-                            Spacer()
-                            ZStack(alignment: .topTrailing) {
-                                Button { vm.showSheet = true } label: {
-                                    Image(systemName: "list.bullet.rectangle")
-                                        .foregroundColor(.black)
-                                        .padding(16)
-                                        .background(Color.accentCyan)
-                                        .clipShape(Circle())
-                                        .shadow(radius: 10)
-                                }
-
-                                if !vm.currentPicks.isEmpty {
-                                    Text("\(vm.currentPicks.count)")
-                                        .font(.caption2.bold())
-                                        .padding(4)
-                                        .background(Color.red)
-                                        .clipShape(Circle())
-                                        .foregroundColor(.white)
-                                        .offset(x: 8, y: -8)
-                                }
-                            }
-                            .padding(.trailing, 20)
-                            .padding(.bottom, 90)
-                        }
-                    }
-                    .transition(.scale.combined(with: .opacity))
-                }
-            }
-        )
-        .navigationBarBackButtonHidden(true)
-        .toolbar {
-            ToolbarItem(placement: .navigationBarLeading) {
-                Button(action: {
-                    presentationMode.wrappedValue.dismiss()
-                }) {
-                    Image(systemName: "chevron.left")
-                        .foregroundColor(.accentCyan)
-                        .font(.system(size: 20, weight: .semibold))
-                }
-            }
-        }
-        .navigationTitle("Dettagli Partita")
-        .navigationBarTitleDisplayMode(.inline)
-        .gesture(
-            DragGesture()
-                .onEnded { value in
-                    if value.translation.width > 100 { // swipe destra per tornare indietro
-                        presentationMode.wrappedValue.dismiss()
-                    }
-                }
-        )
     }
 
     private func oddsSection(title: String, odds: [(String, MatchOutcome, Double)]) -> some View {
-        VStack(spacing: 10) {
+        VStack(alignment: .leading, spacing: 8) {
             Text(title)
-                .font(.headline)
                 .foregroundColor(.white)
+                .font(.headline)
 
-            HStack(spacing: 10) {
-                ForEach(odds, id: \.0) { label, outcome, odd in
-                    oddButton(label, outcome, odd)
+            HStack(spacing: 12) {
+                ForEach(odds, id: \.0) { item in
+                    Button {
+                        vm.addPick(match: match, outcome: item.1, odd: item.2)
+                    } label: {
+                        VStack {
+                            Text(item.0).bold()
+                            Text(String(format: "%.2f", item.2))
+                                .font(.caption)
+                        }
+                        .foregroundColor(.black)
+                        .frame(maxWidth: .infinity)
+                        .padding(10)
+                        .background(Color.accentCyan)
+                        .cornerRadius(14)
+                    }
                 }
             }
         }
         .padding()
         .background(Color.white.opacity(0.06))
         .cornerRadius(14)
-    }
-
-    private func oddButton(_ label: String, _ outcome: MatchOutcome, _ odd: Double) -> some View {
-        let isSelected = vm.currentPicks.contains { $0.match.id == match.id && $0.outcome == outcome }
-
-        return Button {
-            vm.addPick(match: match, outcome: outcome, odd: odd)
-        } label: {
-            VStack {
-                Text(label).bold()
-                Text(String(format: "%.2f", odd)).font(.caption)
-            }
-            .foregroundColor(.white)
-            .frame(maxWidth: .infinity)
-            .padding(10)
-            .background(Color.clear)
-            .overlay(
-                RoundedRectangle(cornerRadius: 14)
-                    .stroke(isSelected ? Color.accentCyan : Color.white.opacity(0.2), lineWidth: 3)
-            )
-            .cornerRadius(14)
-        }
-        .animation(.easeInOut(duration: 0.2), value: isSelected)
-    }
-}
-
-struct ProfileView: View {
-
-    @EnvironmentObject var vm: BettingViewModel
-    @Binding var userName: String
-    @Binding var balance: Double
-
-    @State private var showNameField = false
-
-    var initials: String {
-        let parts = userName.split(separator: " ")
-        if parts.count >= 2 {
-            return "\(parts.first!.first!)\(parts.last!.first!)".uppercased()
-        } else if let first = userName.first {
-            return String(first).uppercased()
-        }
-        return "?"
-    }
-
-    var body: some View {
-        ZStack {
-            Color.black.ignoresSafeArea()
-
-            ScrollView {
-                VStack(spacing: 28) {
-
-                    // MARK: - HEADER CARD
-                    VStack(spacing: 16) {
-
-                        ZStack {
-                            Circle()
-                                .fill(Color.accentCyan.opacity(0.25))
-                                .frame(width: 90, height: 90)
-
-                            Text(initials)
-                                .font(.largeTitle.bold())
-                                .foregroundColor(.accentCyan)
-                        }
-                        .padding(.top, 20)
-
-                        Text(userName.isEmpty ? "Utente" : userName)
-                            .font(.title.bold())
-                            .foregroundColor(.white)
-
-                        Text("Saldo: €\(balance, specifier: "%.2f")")
-                            .font(.title3.bold())
-                            .foregroundColor(.accentCyan)
-
-                        Button {
-                            withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
-                                showNameField.toggle()
-                            }
-                        } label: {
-                            Text("Modifica nome")
-                                .font(.subheadline.bold())
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 8)
-                                .background(Color.white.opacity(0.1))
-                                .cornerRadius(10)
-                                .foregroundColor(.white)
-                        }
-
-                        if showNameField {
-                            TextField("Inserisci nome", text: $userName)
-                                .padding()
-                                .background(Color.white.opacity(0.08))
-                                .cornerRadius(12)
-                                .foregroundColor(.white)
-                                .padding(.horizontal)
-                                .transition(.opacity.combined(with: .move(edge: .top)))
-                        }
-
-                    }
-                    .padding()
-                    .frame(maxWidth: .infinity)
-                    .background(Color.white.opacity(0.05))
-                    .cornerRadius(20)
-                    .padding(.horizontal)
-
-                    // MARK: - QUICK SETTINGS
-                    VStack(alignment: .leading, spacing: 16) {
-
-                        Text("Impostazioni rapide")
-                            .font(.headline)
-                            .foregroundColor(.white)
-
-                        VStack(spacing: 12) {
-                            settingRow(icon: "bell", title: "Notifiche")
-                            settingRow(icon: "lock", title: "Privacy")
-                            settingRow(icon: "gearshape", title: "Preferenze app")
-                        }
-                        .padding()
-                        .background(Color.white.opacity(0.05))
-                        .cornerRadius(16)
-
-                    }
-                    .padding(.horizontal)
-
-                    // MARK: - USER STATS
-                    VStack(alignment: .leading, spacing: 16) {
-
-                        Text("Statistiche utente")
-                            .font(.headline)
-                            .foregroundColor(.white)
-
-                        VStack(spacing: 12) {
-                            statRow(title: "Scommesse piazzate", value: "\(vm.totalBetsCount)")
-                            statRow(title: "Vinte", value: "\(vm.totalWins)")
-                            statRow(title: "Perse", value: "\(vm.totalLosses)")
-                        }
-                        .padding()
-                        .background(Color.white.opacity(0.05))
-                        .cornerRadius(16)
-
-                    }
-                    .padding(.horizontal)
-
-                    Spacer()
-                }
-                .padding(.top, 20)
-            }
-        }
-    }
-
-    private func settingRow(icon: String, title: String) -> some View {
-        HStack {
-            Image(systemName: icon)
-                .foregroundColor(.accentCyan)
-                .frame(width: 28)
-
-            Text(title)
-                .foregroundColor(.white)
-
-            Spacer()
-
-            Image(systemName: "chevron.right")
-                .foregroundColor(.gray)
-        }
-        .padding(.vertical, 6)
-    }
-
-    private func statRow(title: String, value: String) -> some View {
-        HStack {
-            Text(title)
-                .foregroundColor(.white)
-
-            Spacer()
-
-            Text(value)
-                .foregroundColor(.accentCyan)
-        }
-        .padding(.vertical, 4)
     }
 }
