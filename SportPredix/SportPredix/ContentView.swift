@@ -350,6 +350,7 @@ struct ContentView: View {
 
             if !vm.currentPicks.isEmpty {
                 floatingButton
+                    .transition(.scale.combined(with: .opacity))
             }
         }
         .sheet(isPresented: $vm.showSheet) {
@@ -399,6 +400,7 @@ struct ContentView: View {
                         .stroke(vm.selectedDayIndex == index ? Color.accentCyan : Color.white.opacity(0.2), lineWidth: 3)
                 )
                 .onTapGesture { vm.selectedDayIndex = index }
+                .animation(.easeInOut, value: vm.selectedDayIndex)
             }
         }
         .padding(.horizontal)
@@ -427,13 +429,16 @@ struct ContentView: View {
                 HStack {
                     Text(match.home).font(.headline)
                     Spacer()
-                    Text(match.time)
-                        .font(.subheadline.bold())
-                        .foregroundColor(.accentCyan)
-                    Spacer()
                     Text(match.away).font(.headline)
                 }
                 .foregroundColor(.white)
+
+                HStack {
+                    Spacer()
+                    Text(match.time)
+                        .font(.subheadline.bold())
+                        .foregroundColor(.accentCyan)
+                }
             }
             .padding()
             .background(
@@ -887,6 +892,7 @@ struct MatchDetailView: View {
                             .padding(.bottom, 90)
                         }
                     }
+                    .transition(.scale.combined(with: .opacity))
                 }
             }
         )
@@ -943,6 +949,7 @@ struct MatchDetailView: View {
             )
             .cornerRadius(14)
         }
+        .animation(.easeInOut(duration: 0.2), value: isSelected)
     }
 }
 
