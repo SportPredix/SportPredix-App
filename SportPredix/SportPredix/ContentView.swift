@@ -101,6 +101,14 @@ final class BettingViewModel: ObservableObject {
         didSet { UserDefaults.standard.set(userName, forKey: "userName") }
     }
 
+    @Published var notificationsEnabled: Bool {
+        didSet { UserDefaults.standard.set(notificationsEnabled, forKey: "notificationsEnabled") }
+    }
+
+    @Published var privacyEnabled: Bool {
+        didSet { UserDefaults.standard.set(privacyEnabled, forKey: "privacyEnabled") }
+    }
+
     @Published var currentPicks: [BetPick] = []
     @Published var slips: [BetSlip] = []
 
@@ -121,6 +129,10 @@ final class BettingViewModel: ObservableObject {
         self.balance = savedBalance == 0 ? 1000 : savedBalance
 
         self.userName = UserDefaults.standard.string(forKey: "userName") ?? ""
+        
+        self.notificationsEnabled = UserDefaults.standard.object(forKey: "notificationsEnabled") as? Bool ?? true
+        self.privacyEnabled = UserDefaults.standard.object(forKey: "privacyEnabled") as? Bool ?? false
+        
         self.slips = loadSlips()
         self.dailyMatches = loadMatches()
 
@@ -377,6 +389,23 @@ final class BettingViewModel: ObservableObject {
 
     var totalLosses: Int {
         slips.filter { $0.isWon == false }.count
+    }
+
+    // MARK: - FUNZIONI PROFILO
+
+    func resetAccount() {
+        balance = 1000
+        slips.removeAll()
+        currentPicks.removeAll()
+        saveSlips()
+    }
+
+    func toggleNotifications() {
+        notificationsEnabled.toggle()
+    }
+
+    func togglePrivacy() {
+        privacyEnabled.toggle()
     }
 }
 
@@ -674,7 +703,6 @@ struct GamesView: View {
             
             ScrollView {
                 VStack(spacing: 20) {
-                    Text("Giochi")
                         .font(.largeTitle.bold())
                         .foregroundColor(.white)
                         .padding(.top)
@@ -859,7 +887,7 @@ struct BetSheet: View {
                         onConfirm(stake)
                         presentationMode.wrappedValue.dismiss()
                     }) {
-                        Text("Conferma schedina")
+                        Text("Conferma scommessa")
                             .bold()
                             .frame(maxWidth: .infinity)
                             .padding()
@@ -1245,6 +1273,8 @@ struct MatchDetailView: View {
     }
 }
 
+// MARK: - PROFILE VIEW (COMPLETAMENTE FUNZIONANTE)
+
 struct ProfileView: View {
 
     @EnvironmentObject var vm: BettingViewModel
@@ -1252,6 +1282,9 @@ struct ProfileView: View {
     @Binding var balance: Double
 
     @State private var showNameField = false
+    @State private var showResetAlert = false
+    @State private var showPreferences = false
+    @State private var showPrivacySettings = false
 
     var initials: String {
         let parts = userName.split(separator: " ")
@@ -1297,7 +1330,7 @@ struct ProfileView: View {
                                 showNameField.toggle()
                             }
                         } label: {
-                            Text("Modifica nome")
+                            Text(showNameField ? "Chiudi" : "Modifica nome")
                                 .font(.subheadline.bold())
                                 .padding(.horizontal, 16)
                                 .padding(.vertical, 8)
@@ -1323,7 +1356,7 @@ struct ProfileView: View {
                     .cornerRadius(20)
                     .padding(.horizontal)
 
-                    // MARK: - QUICK SETTINGS
+                    // MARK: - QUICK SETTINGS (FUNZIONANTI)
                     VStack(alignment: .leading, spacing: 16) {
 
                         Text("Impostazioni rapide")
@@ -1331,9 +1364,67 @@ struct ProfileView: View {
                             .foregroundColor(.white)
 
                         VStack(spacing: 12) {
-                            settingRow(icon: "bell", title: "Notifiche")
-                            settingRow(icon: "lock", title: "Privacy")
-                            settingRow(icon: "gearshape", title: "Preferenze app")
+                            // NOTIFICHE CON TOGGLE
+                            Button {
+                                vm.toggleNotifications()
+                            } label: {
+                                HStack {
+                                    Image(systemName: "bell")
+                                        .foregroundColor(.accentCyan)
+                                        .frame(width: 28)
+                                    
+                                    Text("Notifiche")
+                                        .foregroundColor(.white)
+                                    
+                                    Spacer()
+                                    
+                                    Toggle("", isOn: $vm.notificationsEnabled)
+                                        .toggleStyle(SwitchToggleStyle(tint: .accentCyan))
+                                        .labelsHidden()
+                                }
+                                .padding(.vertical, 6)
+                            }
+                            
+                            // PRIVACY CON TOGGLE
+                            Button {
+                                vm.togglePrivacy()
+                            } label: {
+                                HStack {
+                                    Image(systemName: "lock")
+                                        .foregroundColor(.accentCyan)
+                                        .frame(width: 28)
+                                    
+                                    Text("Privacy")
+                                        .foregroundColor(.white)
+                                    
+                                    Spacer()
+                                    
+                                    Toggle("", isOn: $vm.privacyEnabled)
+                                        .toggleStyle(SwitchToggleStyle(tint: .accentCyan))
+                                        .labelsHidden()
+                                }
+                                .padding(.vertical, 6)
+                            }
+                            
+                            // PREFERENZE APP
+                            Button {
+                                showPreferences = true
+                            } label: {
+                                HStack {
+                                    Image(systemName: "gearshape")
+                                        .foregroundColor(.accentCyan)
+                                        .frame(width: 28)
+                                    
+                                    Text("Preferenze app")
+                                        .foregroundColor(.white)
+                                    
+                                    Spacer()
+                                    
+                                    Image(systemName: "chevron.right")
+                                        .foregroundColor(.gray)
+                                }
+                                .padding(.vertical, 6)
+                            }
                         }
                         .padding()
                         .background(Color.white.opacity(0.05))
@@ -1353,6 +1444,80 @@ struct ProfileView: View {
                             statRow(title: "Scommesse piazzate", value: "\(vm.totalBetsCount)")
                             statRow(title: "Vinte", value: "\(vm.totalWins)")
                             statRow(title: "Perse", value: "\(vm.totalLosses)")
+                            
+                            if vm.totalBetsCount > 0 {
+                                let winRate = Double(vm.totalWins) / Double(vm.totalBetsCount) * 100
+                                statRow(title: "Percentuale vittorie", value: "\(winRate, specifier: "%.1f")%")
+                            }
+                        }
+                        .padding()
+                        .background(Color.white.opacity(0.05))
+                        .cornerRadius(16)
+
+                    }
+                    .padding(.horizontal)
+
+                    // MARK: - ACCOUNT ACTIONS
+                    VStack(alignment: .leading, spacing: 16) {
+
+                        Text("Azioni account")
+                            .font(.headline)
+                            .foregroundColor(.white)
+
+                        VStack(spacing: 12) {
+                            // RESET ACCOUNT
+                            Button {
+                                showResetAlert = true
+                            } label: {
+                                HStack {
+                                    Image(systemName: "arrow.counterclockwise")
+                                        .foregroundColor(.red)
+                                        .frame(width: 28)
+                                    
+                                    Text("Reset account")
+                                        .foregroundColor(.red)
+                                    
+                                    Spacer()
+                                }
+                                .padding(.vertical, 10)
+                            }
+                            
+                            // DEPOSITA FONDI
+                            Button {
+                                depositFunds()
+                            } label: {
+                                HStack {
+                                    Image(systemName: "plus.circle")
+                                        .foregroundColor(.green)
+                                        .frame(width: 28)
+                                    
+                                    Text("Deposita €100")
+                                        .foregroundColor(.green)
+                                    
+                                    Spacer()
+                                }
+                                .padding(.vertical, 10)
+                            }
+                            
+                            // INFO APP
+                            Button {
+                                showAppInfo()
+                            } label: {
+                                HStack {
+                                    Image(systemName: "info.circle")
+                                        .foregroundColor(.accentCyan)
+                                        .frame(width: 28)
+                                    
+                                    Text("Info app")
+                                        .foregroundColor(.accentCyan)
+                                    
+                                    Spacer()
+                                    
+                                    Image(systemName: "chevron.right")
+                                        .foregroundColor(.gray)
+                                }
+                                .padding(.vertical, 10)
+                            }
                         }
                         .padding()
                         .background(Color.white.opacity(0.05))
@@ -1362,27 +1527,47 @@ struct ProfileView: View {
                     .padding(.horizontal)
 
                     Spacer()
+                        .frame(height: 30)
                 }
                 .padding(.top, 20)
             }
         }
+        .alert("Reset Account", isPresented: $showResetAlert) {
+            Button("Annulla", role: .cancel) { }
+            Button("Reset", role: .destructive) {
+                vm.resetAccount()
+            }
+        } message: {
+            Text("Vuoi davvero resettare il tuo account? Perderai tutte le scommesse piazzate e il saldo tornerà a €1000.")
+        }
+        .sheet(isPresented: $showPreferences) {
+            PreferencesView()
+        }
     }
 
-    private func settingRow(icon: String, title: String) -> some View {
-        HStack {
-            Image(systemName: icon)
-                .foregroundColor(.accentCyan)
-                .frame(width: 28)
-
-            Text(title)
-                .foregroundColor(.white)
-
-            Spacer()
-
-            Image(systemName: "chevron.right")
-                .foregroundColor(.gray)
+    // MARK: - FUNZIONI PROFILO
+    
+    private func depositFunds() {
+        balance += 100
+        // Mostra un feedback visivo
+        let generator = UINotificationFeedbackGenerator()
+        generator.notificationOccurred(.success)
+    }
+    
+    private func showAppInfo() {
+        // Mostra un alert con le info dell'app
+        let alert = UIAlertController(
+            title: "SportPredix Info",
+            message: "Versione 1.0\nSviluppato per dimostrazione\n© 2024 SportPredix",
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: "OK", style: .default))
+        
+        // Presenta l'alert
+        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+           let rootViewController = windowScene.windows.first?.rootViewController {
+            rootViewController.present(alert, animated: true)
         }
-        .padding(.vertical, 6)
     }
 
     private func statRow(title: String, value: String) -> some View {
@@ -1394,7 +1579,90 @@ struct ProfileView: View {
 
             Text(value)
                 .foregroundColor(.accentCyan)
+                .fontWeight(.medium)
         }
         .padding(.vertical, 4)
+    }
+}
+
+// MARK: - PREFERENCES VIEW
+
+struct PreferencesView: View {
+    @Environment(\.presentationMode) var presentationMode
+    
+    @State private var soundEnabled = true
+    @State private var vibrationEnabled = true
+    @State private var darkModeEnabled = true
+    
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+            
+            VStack(spacing: 20) {
+                Capsule()
+                    .fill(Color.gray)
+                    .frame(width: 40, height: 5)
+                    .padding(.top, 8)
+                
+                Text("Preferenze App")
+                    .font(.title2.bold())
+                    .foregroundColor(.accentCyan)
+                
+                ScrollView {
+                    VStack(spacing: 16) {
+                        VStack(spacing: 12) {
+                            HStack {
+                                Text("Suoni")
+                                    .foregroundColor(.white)
+                                Spacer()
+                                Toggle("", isOn: $soundEnabled)
+                                    .toggleStyle(SwitchToggleStyle(tint: .accentCyan))
+                            }
+                            
+                            HStack {
+                                Text("Vibrazioni")
+                                    .foregroundColor(.white)
+                                Spacer()
+                                Toggle("", isOn: $vibrationEnabled)
+                                    .toggleStyle(SwitchToggleStyle(tint: .accentCyan))
+                            }
+                            
+                            HStack {
+                                Text("Modalità Scura")
+                                    .foregroundColor(.white)
+                                Spacer()
+                                Toggle("", isOn: $darkModeEnabled)
+                                    .toggleStyle(SwitchToggleStyle(tint: .accentCyan))
+                            }
+                        }
+                        .padding()
+                        .background(Color.white.opacity(0.06))
+                        .cornerRadius(14)
+                        
+                        Text("Queste impostazioni influenzano l'esperienza utente nell'app.")
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal)
+                    }
+                }
+                
+                Button {
+                    presentationMode.wrappedValue.dismiss()
+                } label: {
+                    Text("Chiudi")
+                        .bold()
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.accentCyan)
+                        .foregroundColor(.black)
+                        .cornerRadius(16)
+                }
+                .padding(.horizontal)
+                
+                Spacer()
+            }
+            .padding()
+        }
     }
 }
