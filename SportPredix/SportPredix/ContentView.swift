@@ -9,8 +9,6 @@ import SwiftUI
 
 extension Color {
     static let accentCyan = Color(red: 68/255, green: 224/255, blue: 203/255)
-    static let accentYellow = Color(red: 255/255, green: 214/255, blue: 10/255)
-    static let accentPink = Color(red: 255/255, green: 45/255, blue: 85/255)
 }
 
 // MARK: - MODELS
@@ -61,8 +59,10 @@ struct BetSlip: Identifiable, Codable {
     let totalOdd: Double
     let potentialWin: Double
     let date: Date
+
     var isWon: Bool? = nil
     var isEvaluated: Bool = false
+
     var impliedProbability: Double { 1 / totalOdd }
     var expectedValue: Double { potentialWin * impliedProbability - stake }
 }
@@ -70,108 +70,160 @@ struct BetSlip: Identifiable, Codable {
 // MARK: - VIEW MODEL
 
 final class BettingViewModel: ObservableObject {
+
     @Published var selectedTab = 0
     @Published var selectedDayIndex = 1
+
     @Published var showSheet = false
     @Published var showSlipDetail: BetSlip?
+
     @Published var balance: Double {
         didSet { UserDefaults.standard.set(balance, forKey: "balance") }
     }
+
     @Published var userName: String {
         didSet { UserDefaults.standard.set(userName, forKey: "userName") }
     }
+
     @Published var currentPicks: [BetPick] = []
     @Published var slips: [BetSlip] = []
+
     @Published var dailyMatches: [String: [Match]] = [:]
-    @Published var upcomingGame: String? = nil // Per mostrare "Presto in arrivo!"
-    
+
     private let slipsKey = "savedSlips"
     private let matchesKey = "savedMatches"
-    private let teams = ["Napoli","Inter","Milan","Juventus","Roma","Lazio","Liverpool","Chelsea","Arsenal","Man City","Tottenham","Real Madrid","Barcellona","Atletico","Valencia","Bayern","Dortmund","Leipzig","Leverkusen"]
-    
+
+    private let teams = [
+        "Napoli","Inter","Milan","Juventus","Roma","Lazio",
+        "Liverpool","Chelsea","Arsenal","Man City","Tottenham",
+        "Real Madrid","Barcellona","Atletico","Valencia",
+        "Bayern","Dortmund","Leipzig","Leverkusen"
+    ]
+
     init() {
         let savedBalance = UserDefaults.standard.double(forKey: "balance")
         self.balance = savedBalance == 0 ? 1000 : savedBalance
+
         self.userName = UserDefaults.standard.string(forKey: "userName") ?? ""
         self.slips = loadSlips()
         self.dailyMatches = loadMatches()
+
         generateTodayIfNeeded()
     }
-    
+
+    // MARK: - DATE HELPERS
+
     func dateForIndex(_ index: Int) -> Date {
         Calendar.current.date(byAdding: .day, value: index - 1, to: Date())!
     }
-    
+
     func keyForDate(_ date: Date) -> String {
         let f = DateFormatter()
         f.dateFormat = "yyyy-MM-dd"
         return f.string(from: date)
     }
-    
+
     func formattedDay(_ date: Date) -> String {
         let f = DateFormatter()
         f.dateFormat = "d"
         return f.string(from: date)
     }
-    
+
     func formattedMonth(_ date: Date) -> String {
         let f = DateFormatter()
         f.dateFormat = "MMM"
         return f.string(from: date)
     }
-    
+
+    // MARK: - MATCH GENERATION (CON RISULTATO CASUALE)
+
     func generateMatchesForDate(_ date: Date) -> [Match] {
         var result: [Match] = []
+
         for _ in 0..<12 {
             let home = teams.randomElement()!
             var away = teams.randomElement()!
             while away == home { away = teams.randomElement()! }
+
             let hour = Int.random(in: 12...22)
             let minute = ["00","15","30","45"].randomElement()!
             let time = "\(hour):\(minute)"
-            let odds = Odds(home: Double.random(in: 1.20...2.50), draw: Double.random(in: 2.80...4.50), away: Double.random(in: 2.50...7.00), homeDraw: Double.random(in: 1.10...1.50), homeAway: Double.random(in: 1.15...1.30), drawAway: Double.random(in: 1.20...1.60), over25: Double.random(in: 1.70...2.20), under25: Double.random(in: 1.70...2.20))
+
+            let odds = Odds(
+                home: Double.random(in: 1.20...2.50),
+                draw: Double.random(in: 2.80...4.50),
+                away: Double.random(in: 2.50...7.00),
+                homeDraw: Double.random(in: 1.10...1.50),
+                homeAway: Double.random(in: 1.15...1.30),
+                drawAway: Double.random(in: 1.20...1.60),
+                over25: Double.random(in: 1.70...2.20),
+                under25: Double.random(in: 1.70...2.20)
+            )
+
             let goals = Int.random(in: 0...6)
+
             let possibleResults: [MatchOutcome] = [.home, .draw, .away]
             let randomResult = possibleResults.randomElement()!
-            result.append(Match(id: UUID(), home: home, away: away, time: time, odds: odds, result: randomResult, goals: goals))
+
+            result.append(Match(
+                id: UUID(),
+                home: home,
+                away: away,
+                time: time,
+                odds: odds,
+                result: randomResult,
+                goals: goals
+            ))
         }
+
         return result
     }
-    
+
     func generateTodayIfNeeded() {
         let todayKey = keyForDate(Date())
+
         if dailyMatches[todayKey] == nil {
             dailyMatches[todayKey] = generateMatchesForDate(Date())
             saveMatches()
         }
     }
-    
+
     func matchesForSelectedDay() -> [String: [Match]] {
         let date = dateForIndex(selectedDayIndex)
         let key = keyForDate(date)
+
         if let existing = dailyMatches[key] {
-            return Dictionary(grouping: existing) { $0.time }
+            let grouped = Dictionary(grouping: existing) { $0.time }
+            return grouped
         }
+
         let newMatches = generateMatchesForDate(date)
         dailyMatches[key] = newMatches
         saveMatches()
-        return Dictionary(grouping: newMatches) { $0.time }
+        let grouped = Dictionary(grouping: newMatches) { $0.time }
+        return grouped
     }
-    
+
+    // MARK: - SAVE / LOAD
+
     func saveMatches() {
         if let data = try? JSONEncoder().encode(dailyMatches) {
             UserDefaults.standard.set(data, forKey: matchesKey)
         }
     }
-    
+
     func loadMatches() -> [String: [Match]] {
         guard let data = UserDefaults.standard.data(forKey: matchesKey),
-              let decoded = try? JSONDecoder().decode([String: [Match]].self, from: data) else { return [:] }
+              let decoded = try? JSONDecoder().decode([String: [Match]].self, from: data) else {
+            return [:]
+        }
         return decoded
     }
-    
+
+    // MARK: - BETTING
+
     var totalOdd: Double { currentPicks.map { $0.odd }.reduce(1, *) }
-    
+
     func addPick(match: Match, outcome: MatchOutcome, odd: Double) {
         if let index = currentPicks.firstIndex(where: { $0.match.id == match.id && $0.outcome == outcome }) {
             currentPicks.remove(at: index)
@@ -179,267 +231,179 @@ final class BettingViewModel: ObservableObject {
             currentPicks.append(BetPick(id: UUID(), match: match, outcome: outcome, odd: odd))
         }
     }
-    
+
     func removePick(_ pick: BetPick) {
         currentPicks.removeAll { $0.id == pick.id }
     }
-    
+
     func confirmSlip(stake: Double) {
-        let slip = BetSlip(id: UUID(), picks: currentPicks, stake: stake, totalOdd: totalOdd, potentialWin: stake * totalOdd, date: Date(), isWon: nil, isEvaluated: false)
+        let slip = BetSlip(
+            id: UUID(),
+            picks: currentPicks,
+            stake: stake,
+            totalOdd: totalOdd,
+            potentialWin: stake * totalOdd,
+            date: Date(),
+            isWon: nil,
+            isEvaluated: false
+        )
         balance -= stake
         currentPicks.removeAll()
         slips.insert(slip, at: 0)
         saveSlips()
     }
-    
+
     private func saveSlips() {
         if let data = try? JSONEncoder().encode(slips) {
             UserDefaults.standard.set(data, forKey: slipsKey)
         }
     }
-    
+
     private func loadSlips() -> [BetSlip] {
         guard let data = UserDefaults.standard.data(forKey: slipsKey),
               let decoded = try? JSONDecoder().decode([BetSlip].self, from: data) else { return [] }
         return decoded
     }
-    
+
+    // MARK: - VALUTAZIONE SCHEDINE
+
     func evaluateSlip(_ slip: BetSlip) -> BetSlip {
         var updatedSlip = slip
+
+        // già valutata → non tocco saldo né stato
         if slip.isEvaluated { return slip }
+
         let allCorrect = slip.picks.allSatisfy { pick in
             switch pick.outcome {
-            case .home, .draw, .away: return pick.match.result == pick.outcome
-            case .homeDraw: return pick.match.result == .home || pick.match.result == .draw
-            case .homeAway: return pick.match.result == .home || pick.match.result == .away
-            case .drawAway: return pick.match.result == .draw || pick.match.result == .away
-            case .over25: return (pick.match.goals ?? 0) > 2
-            case .under25: return (pick.match.goals ?? 0) <= 2
+            case .home, .draw, .away:
+                return pick.match.result == pick.outcome
+            case .homeDraw:
+                return pick.match.result == .home || pick.match.result == .draw
+            case .homeAway:
+                return pick.match.result == .home || pick.match.result == .away
+            case .drawAway:
+                return pick.match.result == .draw || pick.match.result == .away
+            case .over25:
+                return (pick.match.goals ?? 0) > 2
+            case .under25:
+                return (pick.match.goals ?? 0) <= 2
             }
         }
+
         updatedSlip.isWon = allCorrect
         updatedSlip.isEvaluated = true
-        if allCorrect { balance += slip.potentialWin }
+
+        if allCorrect {
+            balance += slip.potentialWin
+        }
+
         return updatedSlip
     }
-    
+
     func evaluateAllSlips() {
         slips = slips.map { evaluateSlip($0) }
         saveSlips()
     }
-    
-    var totalBetsCount: Int { slips.count }
-    var totalWins: Int { slips.filter { $0.isWon == true }.count }
-    var totalLosses: Int { slips.filter { $0.isWon == false }.count }
+
+    // MARK: - STATISTICHE
+
+    var totalBetsCount: Int {
+        slips.count
+    }
+
+    var totalWins: Int {
+        slips.filter { $0.isWon == true }.count
+    }
+
+    var totalLosses: Int {
+        slips.filter { $0.isWon == false }.count
+    }
 }
 
 // MARK: - MAIN VIEW
 
 struct ContentView: View {
+
     @StateObject private var vm = BettingViewModel()
     @Namespace private var animationNamespace
-    
+
     var body: some View {
         NavigationView {
             ZStack {
-                Color.black.ignoresSafeArea()
-                VStack(spacing: 0) {
-                    header
-                    if vm.selectedTab == 0 {
-                        calendarBar
-                        matchList
-                    } else if vm.selectedTab == 1 {
-                        placedBets.onAppear { vm.evaluateAllSlips() }
-                    } else if vm.selectedTab == 2 {
-                        gamesView
-                    } else {
-                        ProfileView(userName: $vm.userName, balance: $vm.balance).environmentObject(vm)
-                    }
-                    bottomBar
+            Color.black.ignoresSafeArea()
+
+            VStack(spacing: 0) {
+
+                header
+
+                if vm.selectedTab == 0 {
+                    calendarBar
+                    matchList
+                } else if vm.selectedTab == 1 {
+                    GamesView()
+                } else if vm.selectedTab == 2 {
+                    placedBets
+                        .onAppear { vm.evaluateAllSlips() }
+                } else {
+                    ProfileView(userName: $vm.userName, balance: $vm.balance)
+                        .environmentObject(vm)
                 }
-                if !vm.currentPicks.isEmpty {
-                    floatingButton.transition(.scale.combined(with: .opacity))
-                }
+
+                bottomBar
             }
-            .sheet(isPresented: $vm.showSheet) {
-                BetSheet(picks: $vm.currentPicks, balance: $vm.balance, totalOdd: vm.totalOdd) { stake in vm.confirmSlip(stake: stake) }
-            }
-            .sheet(item: $vm.showSlipDetail) { SlipDetailView(slip: $0) }
-            .sheet(item: $vm.upcomingGame) { gameName in
-                UpcomingGameView(gameName: gameName)
+
+            if !vm.currentPicks.isEmpty {
+                floatingButton
+                    .transition(.scale.combined(with: .opacity))
             }
         }
+        .sheet(isPresented: $vm.showSheet) {
+            BetSheet(
+                picks: $vm.currentPicks,
+                balance: $vm.balance,
+                totalOdd: vm.totalOdd
+            ) { stake in vm.confirmSlip(stake: stake) }
+        }
+        .sheet(item: $vm.showSlipDetail) { SlipDetailView(slip: $0) }
+        }
     }
-    
+
     private var header: some View {
         HStack {
-            Text(vm.selectedTab == 0 ? "Calendario" : vm.selectedTab == 1 ? "Piazzate" : vm.selectedTab == 2 ? "Giochi" : "Profilo")
+            Text(vm.selectedTab == 0 ? "Calendario" :
+                 vm.selectedTab == 1 ? "Giochi" :
+                 vm.selectedTab == 2 ? "Piazzate" : "Profilo")
                 .font(.largeTitle.bold())
                 .foregroundColor(.white)
+
             Spacer()
+
             Text("€\(vm.balance, specifier: "%.2f")")
                 .foregroundColor(.accentCyan)
                 .bold()
         }
         .padding()
     }
-    
-    private var gamesView: some View {
-        ScrollView {
-            VStack(spacing: 20) {
-                // Crazy Time Button
-                Button {
-                    vm.upcomingGame = "Crazy Time"
-                } label: {
-                    gameCard(
-                        title: "🎡 Crazy Time",
-                        description: "Gira la ruota e vinci fino a €200!",
-                        gradientColors: [.yellow, .orange, .red, .pink],
-                        icon1: "trophy.fill",
-                        icon2: "sparkles",
-                        betAmount: "€10"
-                    )
-                }
-                
-                // Gratta e Vinci Button
-                Button {
-                    vm.upcomingGame = "Gratta e Vinci"
-                } label: {
-                    gameCard(
-                        title: "✨ Gratta e Vinci",
-                        description: "Scopri i simboli fortunati!",
-                        gradientColors: [.green, .mint, .teal],
-                        icon1: "sparkles",
-                        icon2: "trophy.fill",
-                        betAmount: "€5"
-                    )
-                }
-                
-                // Blackjack Button
-                Button {
-                    vm.upcomingGame = "Blackjack"
-                } label: {
-                    gameCard(
-                        title: "♠️ Blackjack",
-                        description: "Sfida il banco e vinci il 21!",
-                        gradientColors: [.black, .gray, .black],
-                        icon1: "suit.spade.fill",
-                        icon2: "suit.heart.fill",
-                        betAmount: "€20"
-                    )
-                }
-                
-                // Slot Machine Button
-                Button {
-                    vm.upcomingGame = "Slot Machine"
-                } label: {
-                    gameCard(
-                        title: "🎰 Slot Machine",
-                        description: "Allinea i simboli per vincere!",
-                        gradientColors: [.purple, .blue, .purple],
-                        icon1: "dollarsign.circle.fill",
-                        icon2: "crown.fill",
-                        betAmount: "€5"
-                    )
-                }
-                
-                // Poker Button
-                Button {
-                    vm.upcomingGame = "Poker"
-                } label: {
-                    gameCard(
-                        title: "🃏 Poker",
-                        description: "Sfida altri giocatori in tempo reale!",
-                        gradientColors: [.blue, .green, .blue],
-                        icon1: "person.2.fill",
-                        icon2: "flag.fill",
-                        betAmount: "€50"
-                    )
-                }
-                
-                // Roulette Button
-                Button {
-                    vm.upcomingGame = "Roulette"
-                } label: {
-                    gameCard(
-                        title: "🎲 Roulette",
-                        description: "Scegli il numero fortunato!",
-                        gradientColors: [.red, .black, .red],
-                        icon1: "circle.grid.cross.fill",
-                        icon2: "number.circle.fill",
-                        betAmount: "€10"
-                    )
-                }
-            }
-            .padding()
-        }
-    }
-    
-    private func gameCard(
-        title: String,
-        description: String,
-        gradientColors: [Color],
-        icon1: String,
-        icon2: String,
-        betAmount: String
-    ) -> some View {
-        ZStack {
-            LinearGradient(colors: gradientColors, startPoint: .topLeading, endPoint: .bottomTrailing)
-                .overlay(Color.black.opacity(0.2))
-            
-            VStack(spacing: 12) {
-                HStack {
-                    Image(systemName: icon1)
-                        .font(.system(size: 40))
-                        .foregroundColor(.white)
-                    Spacer()
-                    Image(systemName: icon2)
-                        .font(.system(size: 30))
-                        .foregroundColor(.yellow)
-                }
-                
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(title)
-                        .font(.system(size: 36, weight: .bold))
-                        .foregroundColor(.white)
-                    
-                    Text(description)
-                        .font(.system(size: 18))
-                        .foregroundColor(.white.opacity(0.9))
-                    
-                    HStack {
-                        Text("Puntata: \(betAmount)")
-                            .font(.headline)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 8)
-                            .background(Color.white.opacity(0.3))
-                            .cornerRadius(20)
-                            .foregroundColor(.white)
-                        Spacer()
-                    }
-                }
-            }
-            .padding(24)
-        }
-        .frame(height: 220)
-        .cornerRadius(24)
-        .overlay(
-            RoundedRectangle(cornerRadius: 24)
-                .stroke(Color.accentCyan.opacity(0.3), lineWidth: 1)
-        )
-    }
-    
+
+    // MARK: CALENDAR BAR
+
     private var calendarBar: some View {
         HStack(spacing: 16) {
             ForEach(0..<3) { index in
                 let date = vm.dateForIndex(index)
+
                 VStack(spacing: 4) {
-                    Text(vm.formattedDay(date)).font(.title2.bold())
-                    Text(vm.formattedMonth(date)).font(.caption)
+                    Text(vm.formattedDay(date))
+                        .font(.title2.bold())
+                    Text(vm.formattedMonth(date))
+                        .font(.caption)
                 }
                 .foregroundColor(.white)
                 .frame(width: 90, height: 70)
-                .background(RoundedRectangle(cornerRadius: 14).stroke(vm.selectedDayIndex == index ? Color.accentCyan : Color.white.opacity(0.2), lineWidth: 3))
+                .background(
+                    RoundedRectangle(cornerRadius: 14)
+                        .stroke(vm.selectedDayIndex == index ? Color.accentCyan : Color.white.opacity(0.2), lineWidth: 3)
+                )
                 .onTapGesture { vm.selectedDayIndex = index }
                 .animation(.easeInOut, value: vm.selectedDayIndex)
             }
@@ -447,17 +411,22 @@ struct ContentView: View {
         .padding(.horizontal)
         .padding(.bottom, 8)
     }
-    
+
+    // MARK: MATCH LIST
+
     private var matchList: some View {
         let groupedMatches = vm.matchesForSelectedDay()
         let isYesterday = vm.selectedDayIndex == 0
+
         return ScrollView {
             VStack(spacing: 16) {
                 ForEach(groupedMatches.keys.sorted(), id: \.self) { time in
                     VStack(spacing: 10) {
                         HStack {
                             Spacer()
-                            Text(time).font(.headline).foregroundColor(.accentCyan)
+                            Text(time)
+                                .font(.headline)
+                                .foregroundColor(.accentCyan)
                         }
                         ForEach(groupedMatches[time]!) { match in
                             matchCard(match, disabled: isYesterday)
@@ -470,7 +439,7 @@ struct ContentView: View {
         .id(vm.selectedDayIndex)
         .transition(.opacity)
     }
-    
+
     private func matchCard(_ match: Match, disabled: Bool) -> some View {
         NavigationLink(destination: MatchDetailView(match: match, vm: vm)) {
             VStack(spacing: 10) {
@@ -482,11 +451,20 @@ struct ContentView: View {
                 .foregroundColor(disabled ? .gray : .white)
             }
             .padding()
-            .background(RoundedRectangle(cornerRadius: 16).fill(disabled ? Color.gray.opacity(0.1) : Color.white.opacity(0.06)).overlay(RoundedRectangle(cornerRadius: 16).stroke(disabled ? Color.gray.opacity(0.2) : Color.white.opacity(0.08), lineWidth: 1)))
+            .background(
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(disabled ? Color.gray.opacity(0.1) : Color.white.opacity(0.06))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16)
+                            .stroke(disabled ? Color.gray.opacity(0.2) : Color.white.opacity(0.08), lineWidth: 1)
+                    )
+            )
         }
         .disabled(disabled)
     }
-    
+
+    // MARK: PLACED BETS
+
     private var placedBets: some View {
         ScrollView {
             VStack(spacing: 12) {
@@ -505,6 +483,7 @@ struct ContentView: View {
                                 Text("Vincita potenziale €\(slip.potentialWin, specifier: "%.2f")")
                                     .foregroundColor(.gray)
                                     .font(.caption)
+
                                 if let won = slip.isWon {
                                     Text(won ? "ESITO: VINTA" : "ESITO: PERSA")
                                         .foregroundColor(won ? .green : .red)
@@ -522,7 +501,9 @@ struct ContentView: View {
             .padding()
         }
     }
-    
+
+    // MARK: FLOATING BUTTON
+
     private var floatingButton: some View {
         VStack {
             Spacer()
@@ -537,6 +518,7 @@ struct ContentView: View {
                             .clipShape(Circle())
                             .shadow(radius: 10)
                     }
+
                     if !vm.currentPicks.isEmpty {
                         Text("\(vm.currentPicks.count)")
                             .font(.caption2.bold())
@@ -552,240 +534,237 @@ struct ContentView: View {
             }
         }
     }
-    
+
+    // MARK: - BOTTOM BAR (CON SFOCATURA COME NELL'IMMAGINE)
+
     private var bottomBar: some View {
         ZStack {
-            VisualEffectBlur(blurStyle: .systemUltraThinMaterialDark)
-                .frame(height: 85)
-                .cornerRadius(30)
-                .padding(.horizontal, 12)
-                .shadow(color: .black.opacity(0.3), radius: 15, y: -5)
-            HStack(spacing: 0) {
-                ForEach(0..<4) { index in
-                    Spacer()
-                    bottomItem(index: index)
-                    Spacer()
-                }
-            }
-            .padding(.horizontal, 8)
-            VStack {
-                Spacer()
-                Capsule()
-                    .fill(Color.white.opacity(0.3))
-                    .frame(width: 120, height: 4)
-                    .padding(.bottom, 8)
+            Rectangle()
+                .background(.ultraThinMaterial)
+                .frame(height: 70)
+                .cornerRadius(26)
+                .padding(.horizontal)
+                .shadow(color: .black.opacity(0.25), radius: 10, y: -2)
+
+            HStack(spacing: 50) {
+                bottomItem(icon: "calendar", index: 0)
+                bottomItem(icon: "dice.fill", index: 1)
+                bottomItem(icon: "list.bullet", index: 2)
+                bottomItem(icon: "person.crop.circle", index: 3)
             }
         }
-        .frame(height: 85)
-        .padding(.bottom, 4)
+        .padding(.bottom, 8)
     }
-    
-    private func bottomItem(index: Int) -> some View {
+
+    private func bottomItem(icon: String, index: Int) -> some View {
         let isSelected = vm.selectedTab == index
-        let icons = ["calendar", "list.bullet", "gamepad.fill", "person.crop.circle"]
+
         return Button {
-            withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
                 vm.selectedTab = index
-                vm.upcomingGame = nil
             }
         } label: {
-            VStack(spacing: 8) {
+            VStack(spacing: 6) {
+
                 ZStack {
                     if isSelected {
                         Circle()
                             .fill(Color.accentCyan.opacity(0.25))
-                            .frame(width: 52, height: 52)
+                            .frame(width: 44, height: 44)
                             .transition(.scale.combined(with: .opacity))
                     }
-                    Image(systemName: icons[index])
-                        .font(.system(size: 24, weight: .semibold))
-                        .foregroundColor(isSelected ? .accentCyan : .white.opacity(0.6))
-                        .scaleEffect(isSelected ? 1.2 : 1.0)
+
+                    Image(systemName: icon)
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundColor(isSelected ? .accentCyan : .white.opacity(0.7))
+                        .scaleEffect(isSelected ? 1.15 : 1.0)
+                        .animation(.spring(response: 0.3, dampingFraction: 0.6), value: isSelected)
                 }
-                .frame(height: 52)
+
                 if isSelected {
                     Capsule()
                         .fill(Color.accentCyan)
-                        .frame(width: 28, height: 4)
+                        .frame(width: 22, height: 4)
                         .matchedGeometryEffect(id: "tabIndicator", in: animationNamespace)
                 } else {
                     Capsule()
                         .fill(Color.clear)
-                        .frame(width: 28, height: 4)
+                        .frame(width: 22, height: 4)
                 }
             }
         }
     }
 }
 
-// MARK: - UPCOMING GAME VIEW (Sheet)
+// MARK: - GAMES VIEW
 
-struct UpcomingGameView: View {
-    let gameName: String
-    @Environment(\.dismiss) var dismiss
+struct GamesView: View {
+    let games = [
+        ("Gratta e Vinci", "scrubber"),
+        ("Crazy Time", "clock"),
+        ("Slot Machine", "play.square"),
+        ("Roulette", "circle.grid.cross"),
+        ("Blackjack", "suit.club"),
+        ("Poker", "suit.spade")
+    ]
+    
+    let columns = [
+        GridItem(.flexible()),
+        GridItem(.flexible())
+    ]
     
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
             
-            VStack(spacing: 30) {
-                // Draggable indicator
-                Capsule()
-                    .fill(Color.gray.opacity(0.5))
-                    .frame(width: 40, height: 5)
-                    .padding(.top, 10)
-                
-                Spacer()
-                
-                // Animated icon
-                Image(systemName: "clock.badge.exclamationmark")
-                    .font(.system(size: 100))
+            ScrollView {
+                VStack(spacing: 20) {
+                    Text("Giochi")
+                        .font(.largeTitle.bold())
+                        .foregroundColor(.white)
+                        .padding(.top)
+                    
+                    LazyVGrid(columns: columns, spacing: 20) {
+                        ForEach(games, id: \.0) { game in
+                            GameButton(title: game.0, icon: game.1)
+                        }
+                    }
+                    .padding()
+                }
+            }
+        }
+    }
+}
+
+struct GameButton: View {
+    let title: String
+    let icon: String
+    @State private var showComingSoon = false
+    
+    var body: some View {
+        Button {
+            showComingSoon = true
+        } label: {
+            VStack {
+                Image(systemName: icon)
+                    .font(.system(size: 40))
                     .foregroundColor(.accentCyan)
-                    .symbolEffect(.pulse, options: .repeating)
+                    .padding(.bottom, 8)
                 
-                // Title
-                Text("Presto in arrivo!")
-                    .font(.system(size: 42, weight: .bold))
+                Text(title)
+                    .font(.headline)
                     .foregroundColor(.white)
                     .multilineTextAlignment(.center)
+            }
+            .frame(width: 160, height: 160)
+            .background(Color.white.opacity(0.08))
+            .cornerRadius(20)
+            .overlay(
+                RoundedRectangle(cornerRadius: 20)
+                    .stroke(Color.accentCyan.opacity(0.3), lineWidth: 2)
+            )
+        }
+        .sheet(isPresented: $showComingSoon) {
+            ComingSoonView()
+        }
+    }
+}
+
+struct ComingSoonView: View {
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+            
+            VStack(spacing: 20) {
+                Capsule()
+                    .fill(Color.gray)
+                    .frame(width: 40, height: 5)
+                    .padding(.top, 8)
                 
-                // Game name
-                Text(gameName)
-                    .font(.title)
-                    .foregroundColor(.accentYellow)
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 10)
-                    .background(Color.white.opacity(0.1))
-                    .cornerRadius(15)
+                Image(systemName: "clock")
+                    .font(.system(size: 60))
+                    .foregroundColor(.accentCyan)
                 
-                // Description
-                Text("Stiamo lavorando per portarti\nun'esperienza di gioco eccezionale!")
-                    .font(.title3)
-                    .foregroundColor(.white.opacity(0.8))
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 30)
+                Text("Presto in arrivo!")
+                    .font(.title.bold())
+                    .foregroundColor(.white)
                 
-                // Coming soon text with animation
-                VStack(spacing: 15) {
-                    Text("🎮 Nuove funzionalità")
-                        .font(.headline)
-                        .foregroundColor(.accentCyan)
-                    
-                    HStack(spacing: 20) {
-                        FeatureBadge(icon: "trophy.fill", text: "Vincite")
-                        FeatureBadge(icon: "person.2.fill", text: "Multiplayer")
-                        FeatureBadge(icon: "sparkles", text: "Bonus")
-                    }
-                }
-                .padding()
-                .background(Color.white.opacity(0.05))
-                .cornerRadius(20)
-                .padding(.horizontal, 30)
-                
-                Spacer()
-                Spacer()
-                
-                // Back button
-                Button(action: {
-                    dismiss()
-                }) {
-                    Text("Torna ai giochi")
-                        .font(.headline)
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Color.accentCyan)
-                        .cornerRadius(15)
-                        .padding(.horizontal, 40)
-                }
-                
-                // Swipe hint
-                Text("👆 Puoi anche scorrere verso il basso per chiudere")
-                    .font(.caption)
+                Text("Questa funzionalità è attualmente in sviluppo.")
+                    .font(.body)
                     .foregroundColor(.gray)
-                    .padding(.bottom, 20)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal)
             }
             .padding()
         }
-        .presentationDetents([.medium, .large])
-        .presentationDragIndicator(.visible)
-        .interactiveDismissDisabled(false)
     }
 }
 
-struct FeatureBadge: View {
-    let icon: String
-    let text: String
-    
-    var body: some View {
-        VStack(spacing: 8) {
-            Image(systemName: icon)
-                .font(.title2)
-                .foregroundColor(.accentYellow)
-            Text(text)
-                .font(.caption)
-                .foregroundColor(.white.opacity(0.8))
-        }
-        .padding(10)
-        .background(Color.white.opacity(0.05))
-        .cornerRadius(10)
-    }
-}
-
-struct VisualEffectBlur: UIViewRepresentable {
-    var blurStyle: UIBlurEffect.Style
-    func makeUIView(context: Context) -> UIVisualEffectView {
-        return UIVisualEffectView(effect: UIBlurEffect(style: blurStyle))
-    }
-    func updateUIView(_ uiView: UIVisualEffectView, context: Context) {
-        uiView.effect = UIBlurEffect(style: blurStyle)
-    }
-}
-
-struct ScaleButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .scaleEffect(configuration.isPressed ? 0.95 : 1.0)
-            .animation(.spring(response: 0.3, dampingFraction: 0.6), value: configuration.isPressed)
-    }
-}
+// MARK: - BET SHEET
 
 struct BetSheet: View {
+
     @Binding var picks: [BetPick]
     @Binding var balance: Double
     let totalOdd: Double
     let onConfirm: (Double) -> Void
+
     @State private var stakeText: String = "1"
-    @Environment(\.dismiss) var dismiss
-    
+
     var stake: Double {
         Double(stakeText.replacingOccurrences(of: ",", with: ".")) ?? 0
     }
-    var impliedProbability: Double { 1 / totalOdd }
-    var expectedValue: Double { (stake * totalOdd * impliedProbability) - stake }
-    
+
+    var impliedProbability: Double {
+        1 / totalOdd
+    }
+
+    var expectedValue: Double {
+        (stake * totalOdd * impliedProbability) - stake
+    }
+
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
+
             VStack(spacing: 20) {
-                Capsule().fill(Color.gray).frame(width: 40, height: 5).padding(.top, 8)
-                Text("Schedina selezionata").font(.title2.bold()).foregroundColor(.accentCyan)
+
+                Capsule()
+                    .fill(Color.gray)
+                    .frame(width: 40, height: 5)
+                    .padding(.top, 8)
+
+                Text("Schedina selezionata")
+                    .font(.title2.bold())
+                    .foregroundColor(.accentCyan)
+
                 if picks.isEmpty {
-                    Text("Devi selezionare un pronostico").foregroundColor(.accentCyan).font(.title2).padding()
+                    Text("Devi selezionare un pronostico")
+                        .foregroundColor(.accentCyan)
+                        .font(.title2)
+                        .padding()
                 } else {
                     ScrollView {
                         VStack(spacing: 12) {
                             ForEach(picks) { pick in
                                 HStack {
                                     VStack(alignment: .leading, spacing: 4) {
-                                        Text("\(pick.match.home) - \(pick.match.away)").font(.headline).foregroundColor(.white)
-                                        Text("Esito: \(pick.outcome.rawValue) | Quota: \(pick.odd, specifier: "%.2f")").font(.subheadline).foregroundColor(.gray)
+                                        Text("\(pick.match.home) - \(pick.match.away)")
+                                            .font(.headline)
+                                            .foregroundColor(.white)
+
+                                        Text("Esito: \(pick.outcome.rawValue) | Quota: \(pick.odd, specifier: "%.2f")")
+                                            .font(.subheadline)
+                                            .foregroundColor(.gray)
                                     }
+
                                     Spacer()
+
                                     Button {
                                         picks.removeAll { $0.id == pick.id }
                                     } label: {
-                                        Image(systemName: "trash").foregroundColor(.red)
+                                        Image(systemName: "trash")
+                                            .foregroundColor(.red)
                                     }
                                 }
                                 .padding()
@@ -794,59 +773,98 @@ struct BetSheet: View {
                             }
                         }
                     }
+
                     VStack(spacing: 8) {
                         Text("Quota totale: \(totalOdd, specifier: "%.2f")")
                         Text("Probabilità implicita: \((impliedProbability * 100), specifier: "%.1f")%")
-                        Text("Expected Value: €\(expectedValue, specifier: "%.2f")").foregroundColor(expectedValue >= 0 ? .green : .red)
+                        Text("Expected Value: €\(expectedValue, specifier: "%.2f")")
+                            .foregroundColor(expectedValue >= 0 ? .green : .red)
                     }
                     .font(.subheadline)
                     .foregroundColor(.accentCyan)
+
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Importo:").foregroundColor(.white)
-                        TextField("Inserisci importo", text: $stakeText).keyboardType(.decimalPad).padding().background(Color.white.opacity(0.08)).cornerRadius(12).foregroundColor(.white)
-                        Text("€\(stake, specifier: "%.2f")").foregroundColor(.accentCyan)
+                        Text("Importo:")
+                            .foregroundColor(.white)
+
+                        TextField("Inserisci importo", text: $stakeText)
+                            .keyboardType(.decimalPad)
+                            .padding()
+                            .background(Color.white.opacity(0.08))
+                            .cornerRadius(12)
+                            .foregroundColor(.white)
+
+                        Text("€\(stake, specifier: "%.2f")")
+                            .foregroundColor(.accentCyan)
                     }
+
                     Button(action: {
                         guard stake > 0, stake <= balance else { return }
                         onConfirm(stake)
-                        dismiss()
                     }) {
-                        Text("Conferma schedina").bold().frame(maxWidth: .infinity).padding().background(Color.green).foregroundColor(.black).cornerRadius(16)
+                        Text("Conferma schedina")
+                            .bold()
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(Color.green)
+                            .foregroundColor(.black)
+                            .cornerRadius(16)
                     }
-                    .disabled(stake <= 0 || stake > balance)
-                    .opacity(stake <= 0 || stake > balance ? 0.5 : 1)
                 }
+
                 Spacer()
             }
             .padding()
         }
-        .presentationDetents([.medium, .large])
-        .presentationDragIndicator(.visible)
     }
 }
 
+// MARK: - SLIP DETAIL VIEW
+
 struct SlipDetailView: View {
     let slip: BetSlip
-    @Environment(\.dismiss) var dismiss
-    
+
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
+
             VStack(spacing: 20) {
-                Capsule().fill(Color.gray).frame(width: 40, height: 5).padding(.top, 8)
-                Text("Dettaglio scommessa").font(.title2.bold()).foregroundColor(.accentCyan)
+
+                Capsule()
+                    .fill(Color.gray)
+                    .frame(width: 40, height: 5)
+                    .padding(.top, 8)
+
+                Text("Dettaglio scommessa")
+                    .font(.title2.bold())
+                    .foregroundColor(.accentCyan)
+
                 ScrollView {
                     VStack(spacing: 16) {
+                        
                         ForEach(slip.picks) { pick in
                             VStack(spacing: 10) {
-                                Text("\(pick.match.home) - \(pick.match.away)").font(.headline).foregroundColor(.white)
-                                Text("Orario: \(pick.match.time)").font(.subheadline).foregroundColor(.gray)
-                                Text("Esito giocato: \(pick.outcome.rawValue)").font(.subheadline).foregroundColor(.accentCyan)
+
+                                Text("\(pick.match.home) - \(pick.match.away)")
+                                    .font(.headline)
+                                    .foregroundColor(.white)
+
+                                Text("Orario: \(pick.match.time)")
+                                    .font(.subheadline)
+                                    .foregroundColor(.gray)
+
+                                Text("Esito giocato: \(pick.outcome.rawValue)")
+                                    .font(.subheadline)
+                                    .foregroundColor(.accentCyan)
+
                                 if let result = pick.match.result {
-                                    Text("Risultato reale: \(result.rawValue)").foregroundColor(.white)
+                                    Text("Risultato reale: \(result.rawValue)")
+                                        .foregroundColor(.white)
                                 }
+
                                 if let goals = pick.match.goals {
-                                    Text("Gol totali: \(goals)").foregroundColor(.gray)
+                                    Text("Gol totali: \(goals)")
+                                        .foregroundColor(.gray)
                                 }
                             }
                             .padding()
@@ -854,27 +872,34 @@ struct SlipDetailView: View {
                             .background(Color.white.opacity(0.06))
                             .cornerRadius(14)
                         }
+
                         VStack(spacing: 12) {
+
                             HStack {
                                 Text("Quota totale:")
                                 Spacer()
                                 Text("\(slip.totalOdd, specifier: "%.2f")")
                             }
+
                             HStack {
                                 Text("Puntata:")
                                 Spacer()
                                 Text("€\(slip.stake, specifier: "%.2f")")
                             }
+
                             HStack {
                                 Text("Vincita potenziale:")
                                 Spacer()
                                 Text("€\(slip.potentialWin, specifier: "%.2f")")
                             }
+
                             if let won = slip.isWon {
                                 HStack {
                                     Text("Esito schedina:")
                                     Spacer()
-                                    Text(won ? "VINTA" : "PERSA").foregroundColor(won ? .green : .red).bold()
+                                    Text(won ? "VINTA" : "PERSA")
+                                        .foregroundColor(won ? .green : .red)
+                                        .bold()
                                 }
                             }
                         }
@@ -886,47 +911,54 @@ struct SlipDetailView: View {
                     }
                     .padding(.horizontal)
                 }
-                
-                Button(action: {
-                    dismiss()
-                }) {
-                    Text("Chiudi")
-                        .font(.headline)
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Color.accentCyan)
-                        .cornerRadius(15)
-                        .padding(.horizontal)
-                }
-                .padding(.top, 10)
             }
             .padding(.top)
         }
-        .presentationDetents([.medium, .large])
-        .presentationDragIndicator(.visible)
     }
 }
+
+// MARK: - MATCH DETAIL VIEW
 
 struct MatchDetailView: View {
     let match: Match
     @ObservedObject var vm: BettingViewModel
+
     @Environment(\.presentationMode) var presentationMode
-    
+
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
+
             VStack(spacing: 20) {
-                Text("\(match.home) vs \(match.away)").font(.largeTitle.bold()).foregroundColor(.white)
-                Text("Orario: \(match.time)").foregroundColor(.accentCyan)
+                Text("\(match.home) vs \(match.away)")
+                    .font(.largeTitle.bold())
+                    .foregroundColor(.white)
+
+                Text("Orario: \(match.time)")
+                    .foregroundColor(.accentCyan)
+
                 ScrollView {
                     VStack(spacing: 16) {
-                        oddsSection(title: "1X2", odds: [("1", .home, match.odds.home), ("X", .draw, match.odds.draw), ("2", .away, match.odds.away)])
-                        oddsSection(title: "Doppie Chance", odds: [("1X", .homeDraw, match.odds.homeDraw), ("12", .homeAway, match.odds.homeAway), ("X2", .drawAway, match.odds.drawAway)])
-                        oddsSection(title: "Over/Under 2.5", odds: [("Over 2.5", .over25, match.odds.over25), ("Under 2.5", .under25, match.odds.under25)])
+                        oddsSection(title: "1X2", odds: [
+                            ("1", .home, match.odds.home),
+                            ("X", .draw, match.odds.draw),
+                            ("2", .away, match.odds.away)
+                        ])
+
+                        oddsSection(title: "Doppie Chance", odds: [
+                            ("1X", .homeDraw, match.odds.homeDraw),
+                            ("12", .homeAway, match.odds.homeAway),
+                            ("X2", .drawAway, match.odds.drawAway)
+                        ])
+
+                        oddsSection(title: "Over/Under 2.5", odds: [
+                            ("Over 2.5", .over25, match.odds.over25),
+                            ("Under 2.5", .under25, match.odds.under25)
+                        ])
                     }
                     .padding(.horizontal)
                 }
+
                 Spacer()
             }
             .padding()
@@ -940,10 +972,22 @@ struct MatchDetailView: View {
                             Spacer()
                             ZStack(alignment: .topTrailing) {
                                 Button { vm.showSheet = true } label: {
-                                    Image(systemName: "list.bullet.rectangle").foregroundColor(.black).padding(16).background(Color.accentCyan).clipShape(Circle()).shadow(radius: 10)
+                                    Image(systemName: "list.bullet.rectangle")
+                                        .foregroundColor(.black)
+                                        .padding(16)
+                                        .background(Color.accentCyan)
+                                        .clipShape(Circle())
+                                        .shadow(radius: 10)
                                 }
+
                                 if !vm.currentPicks.isEmpty {
-                                    Text("\(vm.currentPicks.count)").font(.caption2.bold()).padding(4).background(Color.red).clipShape(Circle()).foregroundColor(.white).offset(x: 8, y: -8)
+                                    Text("\(vm.currentPicks.count)")
+                                        .font(.caption2.bold())
+                                        .padding(4)
+                                        .background(Color.red)
+                                        .clipShape(Circle())
+                                        .foregroundColor(.white)
+                                        .offset(x: 8, y: -8)
                                 }
                             }
                             .padding(.trailing, 20)
@@ -957,18 +1001,33 @@ struct MatchDetailView: View {
         .navigationBarBackButtonHidden(true)
         .toolbar {
             ToolbarItem(placement: .navigationBarLeading) {
-                Button(action: { presentationMode.wrappedValue.dismiss() }) {
-                    Image(systemName: "chevron.left").foregroundColor(.accentCyan).font(.system(size: 20, weight: .semibold))
+                Button(action: {
+                    presentationMode.wrappedValue.dismiss()
+                }) {
+                    Image(systemName: "chevron.left")
+                        .foregroundColor(.accentCyan)
+                        .font(.system(size: 20, weight: .semibold))
                 }
             }
         }
         .navigationTitle("Dettagli Partita")
         .navigationBarTitleDisplayMode(.inline)
+        .gesture(
+            DragGesture()
+                .onEnded { value in
+                    if value.translation.width > 100 { // swipe destra per tornare indietro
+                        presentationMode.wrappedValue.dismiss()
+                    }
+                }
+        )
     }
-    
+
     private func oddsSection(title: String, odds: [(String, MatchOutcome, Double)]) -> some View {
         VStack(spacing: 10) {
-            Text(title).font(.headline).foregroundColor(.white)
+            Text(title)
+                .font(.headline)
+                .foregroundColor(.white)
+
             HStack(spacing: 10) {
                 ForEach(odds, id: \.0) { label, outcome, odd in
                     oddButton(label, outcome, odd)
@@ -979,9 +1038,10 @@ struct MatchDetailView: View {
         .background(Color.white.opacity(0.06))
         .cornerRadius(14)
     }
-    
+
     private func oddButton(_ label: String, _ outcome: MatchOutcome, _ odd: Double) -> some View {
         let isSelected = vm.currentPicks.contains { $0.match.id == match.id && $0.outcome == outcome }
+
         return Button {
             vm.addPick(match: match, outcome: outcome, odd: odd)
         } label: {
@@ -993,7 +1053,10 @@ struct MatchDetailView: View {
             .frame(maxWidth: .infinity)
             .padding(10)
             .background(Color.clear)
-            .overlay(RoundedRectangle(cornerRadius: 14).stroke(isSelected ? Color.accentCyan : Color.white.opacity(0.2), lineWidth: 3))
+            .overlay(
+                RoundedRectangle(cornerRadius: 14)
+                    .stroke(isSelected ? Color.accentCyan : Color.white.opacity(0.2), lineWidth: 3)
+            )
             .cornerRadius(14)
         }
         .animation(.easeInOut(duration: 0.2), value: isSelected)
@@ -1001,11 +1064,13 @@ struct MatchDetailView: View {
 }
 
 struct ProfileView: View {
+
     @EnvironmentObject var vm: BettingViewModel
     @Binding var userName: String
     @Binding var balance: Double
+
     @State private var showNameField = false
-    
+
     var initials: String {
         let parts = userName.split(separator: " ")
         if parts.count >= 2 {
@@ -1015,38 +1080,74 @@ struct ProfileView: View {
         }
         return "?"
     }
-    
+
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
+
             ScrollView {
                 VStack(spacing: 28) {
+
+                    // MARK: - HEADER CARD
                     VStack(spacing: 16) {
+
                         ZStack {
-                            Circle().fill(Color.accentCyan.opacity(0.25)).frame(width: 90, height: 90)
-                            Text(initials).font(.largeTitle.bold()).foregroundColor(.accentCyan)
+                            Circle()
+                                .fill(Color.accentCyan.opacity(0.25))
+                                .frame(width: 90, height: 90)
+
+                            Text(initials)
+                                .font(.largeTitle.bold())
+                                .foregroundColor(.accentCyan)
                         }
                         .padding(.top, 20)
-                        Text(userName.isEmpty ? "Utente" : userName).font(.title.bold()).foregroundColor(.white)
-                        Text("Saldo: €\(balance, specifier: "%.2f")").font(.title3.bold()).foregroundColor(.accentCyan)
+
+                        Text(userName.isEmpty ? "Utente" : userName)
+                            .font(.title.bold())
+                            .foregroundColor(.white)
+
+                        Text("Saldo: €\(balance, specifier: "%.2f")")
+                            .font(.title3.bold())
+                            .foregroundColor(.accentCyan)
+
                         Button {
                             withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
                                 showNameField.toggle()
                             }
                         } label: {
-                            Text("Modifica nome").font(.subheadline.bold()).padding(.horizontal, 16).padding(.vertical, 8).background(Color.white.opacity(0.1)).cornerRadius(10).foregroundColor(.white)
+                            Text("Modifica nome")
+                                .font(.subheadline.bold())
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 8)
+                                .background(Color.white.opacity(0.1))
+                                .cornerRadius(10)
+                                .foregroundColor(.white)
                         }
+
                         if showNameField {
-                            TextField("Inserisci nome", text: $userName).padding().background(Color.white.opacity(0.08)).cornerRadius(12).foregroundColor(.white).padding(.horizontal).transition(.opacity.combined(with: .move(edge: .top)))
+                            TextField("Inserisci nome", text: $userName)
+                                .padding()
+                                .background(Color.white.opacity(0.08))
+                                .cornerRadius(12)
+                                .foregroundColor(.white)
+                                .padding(.horizontal)
+                                .transition(.opacity.combined(with: .move(edge: .top)))
                         }
+
                     }
                     .padding()
                     .frame(maxWidth: .infinity)
                     .background(Color.white.opacity(0.05))
                     .cornerRadius(20)
                     .padding(.horizontal)
+
+                    // MARK: - QUICK SETTINGS
                     VStack(alignment: .leading, spacing: 16) {
-                        Text("Impostazioni rapide").font(.headline).foregroundColor(.white)
+
+                        Text("Impostazioni rapide")
+                            .font(.headline)
+                            .foregroundColor(.white)
+
                         VStack(spacing: 12) {
                             settingRow(icon: "bell", title: "Notifiche")
                             settingRow(icon: "lock", title: "Privacy")
@@ -1055,10 +1156,17 @@ struct ProfileView: View {
                         .padding()
                         .background(Color.white.opacity(0.05))
                         .cornerRadius(16)
+
                     }
                     .padding(.horizontal)
+
+                    // MARK: - USER STATS
                     VStack(alignment: .leading, spacing: 16) {
-                        Text("Statistiche utente").font(.headline).foregroundColor(.white)
+
+                        Text("Statistiche utente")
+                            .font(.headline)
+                            .foregroundColor(.white)
+
                         VStack(spacing: 12) {
                             statRow(title: "Scommesse piazzate", value: "\(vm.totalBetsCount)")
                             statRow(title: "Vinte", value: "\(vm.totalWins)")
@@ -1067,30 +1175,43 @@ struct ProfileView: View {
                         .padding()
                         .background(Color.white.opacity(0.05))
                         .cornerRadius(16)
+
                     }
                     .padding(.horizontal)
+
                     Spacer()
                 }
                 .padding(.top, 20)
             }
         }
     }
-    
+
     private func settingRow(icon: String, title: String) -> some View {
         HStack {
-            Image(systemName: icon).foregroundColor(.accentCyan).frame(width: 28)
-            Text(title).foregroundColor(.white)
+            Image(systemName: icon)
+                .foregroundColor(.accentCyan)
+                .frame(width: 28)
+
+            Text(title)
+                .foregroundColor(.white)
+
             Spacer()
-            Image(systemName: "chevron.right").foregroundColor(.gray)
+
+            Image(systemName: "chevron.right")
+                .foregroundColor(.gray)
         }
         .padding(.vertical, 6)
     }
-    
+
     private func statRow(title: String, value: String) -> some View {
         HStack {
-            Text(title).foregroundColor(.white)
+            Text(title)
+                .foregroundColor(.white)
+
             Spacer()
-            Text(value).foregroundColor(.accentCyan)
+
+            Text(value)
+                .foregroundColor(.accentCyan)
         }
         .padding(.vertical, 4)
     }
