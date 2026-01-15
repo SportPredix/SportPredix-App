@@ -569,9 +569,7 @@ struct ProfileView: View {
 
             VStack(alignment: .leading, spacing: 24) {
 
-                Text("Profilo")
-                    .font(.largeTitle.bold())
-                    .foregroundColor(.white)
+    
 
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Nome utente")
