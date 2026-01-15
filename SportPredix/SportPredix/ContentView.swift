@@ -2,8 +2,6 @@
 //  ContentView.swift
 //  SportPredix
 //
-//  Versione unica con MVVM, EV, persistenza schedine + PROFILO + CALENDARIO DINAMICO PERSISTENTE
-//
 
 import SwiftUI
 
@@ -53,7 +51,7 @@ struct BetSlip: Identifiable, Codable {
 final class BettingViewModel: ObservableObject {
 
     @Published var selectedTab = 0
-    @Published var selectedDayIndex = 1   // 0 = ieri, 1 = oggi, 2 = domani
+    @Published var selectedDayIndex = 1
 
     @Published var showSheet = false
     @Published var showSlipDetail: BetSlip?
@@ -69,7 +67,6 @@ final class BettingViewModel: ObservableObject {
     @Published var currentPicks: [BetPick] = []
     @Published var slips: [BetSlip] = []
 
-    // Partite salvate per ogni giorno
     @Published var dailyMatches: [String: [Match]] = [:]
 
     private let slipsKey = "savedSlips"
@@ -116,7 +113,7 @@ final class BettingViewModel: ObservableObject {
         f.dateFormat = "MMM"
         return f.string(from: date)
     }
-        // MARK: - MATCH GENERATION (PERSISTENT)
+    // MARK: - MATCH GENERATION (PERSISTENT)
 
     func generateMatchesForDate(_ date: Date) -> [Match] {
         var result: [Match] = []
@@ -573,7 +570,7 @@ struct BetSheet: View {
     }
 }
 
-// MARK: - SLIP DETAIL
+// MARK: - SLIP DETAIL (VERSIONE MIGLIORATA)
 
 struct SlipDetailView: View {
     let slip: BetSlip
@@ -582,25 +579,80 @@ struct SlipDetailView: View {
         ZStack {
             Color.black.ignoresSafeArea()
 
-            VStack(spacing: 12) {
+            VStack(spacing: 20) {
+
+                Capsule()
+                    .fill(Color.gray)
+                    .frame(width: 40, height: 5)
+                    .padding(.top, 8)
+
                 Text("Dettaglio scommessa")
-                    .foregroundColor(.white)
-                    .font(.headline)
+                    .font(.title2.bold())
+                    .foregroundColor(.accentCyan)
 
                 ForEach(slip.picks) { pick in
-                    Text("\(pick.match.home) - \(pick.match.away) | \(pick.outcome.rawValue)")
-                        .foregroundColor(.white)
+                    VStack(spacing: 10) {
+
+                        Text("\(pick.match.home) - \(pick.match.away)")
+                            .font(.headline)
+                            .foregroundColor(.white)
+
+                        Text("Orario: \(pick.match.time)")
+                            .font(.subheadline)
+                            .foregroundColor(.gray)
+
+                        Text("Esito giocato: \(pick.outcome.rawValue)")
+                            .font(.subheadline)
+                            .foregroundColor(.accentCyan)
+                    }
+                    .padding()
+                    .frame(maxWidth: .infinity)
+                    .background(Color.white.opacity(0.06))
+                    .cornerRadius(14)
                 }
 
-                Text("Quota: \(slip.totalOdd, specifier: "%.2f")")
-                Text("Puntata: €\(slip.stake, specifier: "%.2f")")
-                Text("Vincita potenziale: €\(slip.potentialWin, specifier: "%.2f")")
+                VStack(spacing: 12) {
 
-                Text("Probabilità implicita: \((slip.impliedProbability * 100), specifier: "%.1f")%")
-                Text("Expected Value: €\(slip.expectedValue, specifier: "%.2f")")
-                    .foregroundColor(slip.expectedValue >= 0 ? .green : .red)
+                    HStack {
+                        Text("Quota totale:")
+                        Spacer()
+                        Text("\(slip.totalOdd, specifier: "%.2f")")
+                    }
+
+                    HStack {
+                        Text("Puntata:")
+                        Spacer()
+                        Text("€\(slip.stake, specifier: "%.2f")")
+                    }
+
+                    HStack {
+                        Text("Vincita potenziale:")
+                        Spacer()
+                        Text("€\(slip.potentialWin, specifier: "%.2f")")
+                    }
+
+                    HStack {
+                        Text("Probabilità implicita:")
+                        Spacer()
+                        Text("\((slip.impliedProbability * 100), specifier: "%.1f")%")
+                    }
+
+                    HStack {
+                        Text("Expected Value:")
+                        Spacer()
+                        Text("€\(slip.expectedValue, specifier: "%.2f")")
+                            .foregroundColor(slip.expectedValue >= 0 ? .green : .red)
+                    }
+
+                }
+                .font(.body)
+                .foregroundColor(.white)
+                .padding()
+                .background(Color.white.opacity(0.05))
+                .cornerRadius(12)
+
+                Spacer()
             }
-            .foregroundColor(.accentCyan)
             .padding()
         }
     }
