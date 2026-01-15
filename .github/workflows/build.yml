@@ -27,16 +27,17 @@ jobs:
       - name: Build IPA
         run: ./ipabuild.sh
 
-      - name: Compress IPA
-        run: |
-          cd build
-          zip -r SportPredix.zip SportPredix.ipa
+#      - name: Compress IPA
+#        run: |
+#          cd build
+#          zip -r SportPredix.zip SportPredix.ipa
 
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
         with:
           name: SportPredix-iOS-Build
-          path: build/SportPredix.zip
+          path: build/SportPredix.ipa
+#          path: build/SportPredix.zip
           retention-days: 30
 
 
