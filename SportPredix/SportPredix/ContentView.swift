@@ -694,44 +694,162 @@ struct SlipDetailView: View {
     }
 }
 
-// MARK: - PROFILE VIEW
+// MARK: - PROFILE VIEW (VERSIONE MODERNA)
 
 struct ProfileView: View {
 
     @Binding var userName: String
     @Binding var balance: Double
 
+    @State private var showNameField = false
+
+    var initials: String {
+        let parts = userName.split(separator: " ")
+        if parts.count >= 2 {
+            return "\(parts.first!.first!)\(parts.last!.first!)".uppercased()
+        } else if let first = userName.first {
+            return String(first).uppercased()
+        }
+        return "?"
+    }
+
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
 
-            VStack(alignment: .leading, spacing: 24) {
+            ScrollView {
+                VStack(spacing: 28) {
 
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Nome utente")
-                        .foregroundColor(.gray)
-                        .font(.subheadline)
+                    // MARK: - HEADER CARD
+                    VStack(spacing: 16) {
 
-                    TextField("Inserisci il tuo nome", text: $userName)
+                        // Avatar
+                        ZStack {
+                            Circle()
+                                .fill(Color.accentCyan.opacity(0.25))
+                                .frame(width: 90, height: 90)
+
+                            Text(initials)
+                                .font(.largeTitle.bold())
+                                .foregroundColor(.accentCyan)
+                        }
+                        .padding(.top, 20)
+
+                        // Username
+                        Text(userName.isEmpty ? "Utente" : userName)
+                            .font(.title.bold())
+                            .foregroundColor(.white)
+
+                        // Balance
+                        Text("Saldo: €\(balance, specifier: "%.2f")")
+                            .font(.title3.bold())
+                            .foregroundColor(.accentCyan)
+
+                        Button {
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
+                                showNameField.toggle()
+                            }
+                        } label: {
+                            Text("Modifica nome")
+                                .font(.subheadline.bold())
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 8)
+                                .background(Color.white.opacity(0.1))
+                                .cornerRadius(10)
+                                .foregroundColor(.white)
+                        }
+
+                        if showNameField {
+                            TextField("Inserisci nome", text: $userName)
+                                .padding()
+                                .background(Color.white.opacity(0.08))
+                                .cornerRadius(12)
+                                .foregroundColor(.white)
+                                .padding(.horizontal)
+                                .transition(.opacity.combined(with: .move(edge: .top)))
+                        }
+
+                    }
+                    .padding()
+                    .frame(maxWidth: .infinity)
+                    .background(Color.white.opacity(0.05))
+                    .cornerRadius(20)
+                    .padding(.horizontal)
+
+                    // MARK: - QUICK SETTINGS
+                    VStack(alignment: .leading, spacing: 16) {
+
+                        Text("Impostazioni rapide")
+                            .font(.headline)
+                            .foregroundColor(.white)
+
+                        VStack(spacing: 12) {
+                            settingRow(icon: "bell", title: "Notifiche")
+                            settingRow(icon: "lock", title: "Privacy")
+                            settingRow(icon: "gearshape", title: "Preferenze app")
+                        }
                         .padding()
-                        .background(Color.white.opacity(0.08))
-                        .cornerRadius(12)
-                        .foregroundColor(.white)
+                        .background(Color.white.opacity(0.05))
+                        .cornerRadius(16)
+
+                    }
+                    .padding(.horizontal)
+
+                    // MARK: - USER STATS
+                    VStack(alignment: .leading, spacing: 16) {
+
+                        Text("Statistiche utente")
+                            .font(.headline)
+                            .foregroundColor(.white)
+
+                        VStack(spacing: 12) {
+                            statRow(title: "Scommesse piazzate", value: "—")
+                            statRow(title: "Rendimento medio", value: "—")
+                            statRow(title: "Expected Value totale", value: "—")
+                        }
+                        .padding()
+                        .background(Color.white.opacity(0.05))
+                        .cornerRadius(16)
+
+                    }
+                    .padding(.horizontal)
+
+                    Spacer()
                 }
-
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Saldo attuale")
-                        .foregroundColor(.gray)
-                        .font(.subheadline)
-
-                    Text("€\(balance, specifier: "%.2f")")
-                        .foregroundColor(.accentCyan)
-                        .font(.title2.bold())
-                }
-
-                Spacer()
+                .padding(.top, 20)
             }
-            .padding()
         }
+    }
+
+    // MARK: - COMPONENTI
+
+    private func settingRow(icon: String, title: String) -> some View {
+        HStack {
+            Image(systemName: icon)
+                .foregroundColor(.accentCyan)
+                .frame(width: 28)
+
+            Text(title)
+                .foregroundColor(.white)
+
+            Spacer()
+
+            Image(systemName: "chevron.right")
+                .foregroundColor(.gray)
+        }
+        .padding(.vertical, 6)
+    }
+
+    private func statRow(title: String, value: String) -> some View {
+        HStack {
+            Text(title)
+                .foregroundColor(.white)
+
+            Spacer()
+
+            Text(value)
+                .foregroundColor(.accentCyan)
+        }
+        .padding(.vertical, 4)
     }
 }
