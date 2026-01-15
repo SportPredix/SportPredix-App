@@ -67,12 +67,6 @@ struct BetSlip: Identifiable, Codable {
     var expectedValue: Double { potentialWin * impliedProbability - stake }
 }
 
-struct ScratchCard: Identifiable {
-    let id: Int
-    let symbol: String
-    var revealed: Bool
-}
-
 // MARK: - VIEW MODEL
 
 final class BettingViewModel: ObservableObject {
@@ -89,18 +83,11 @@ final class BettingViewModel: ObservableObject {
     @Published var currentPicks: [BetPick] = []
     @Published var slips: [BetSlip] = []
     @Published var dailyMatches: [String: [Match]] = [:]
-    @Published var activeGame: String? = nil
-    @Published var crazyTimeSpinning = false
-    @Published var crazyTimeResult: String? = nil
-    @Published var crazyTimeBet: String? = nil
-    @Published var crazyTimeRotation: Double = 0
-    @Published var scratchCards: [ScratchCard] = []
-    @Published var scratching = false
+    @Published var upcomingGame: String? = nil // Per mostrare "Presto in arrivo!"
     
     private let slipsKey = "savedSlips"
     private let matchesKey = "savedMatches"
     private let teams = ["Napoli","Inter","Milan","Juventus","Roma","Lazio","Liverpool","Chelsea","Arsenal","Man City","Tottenham","Real Madrid","Barcellona","Atletico","Valencia","Bayern","Dortmund","Leipzig","Leverkusen"]
-    private let crazyTimeSegments = ["1", "2", "5", "10", "BONUS", "1", "2", "5", "10", "BONUS", "1", "2"]
     
     init() {
         let savedBalance = UserDefaults.standard.double(forKey: "balance")
@@ -244,184 +231,6 @@ final class BettingViewModel: ObservableObject {
     var totalBetsCount: Int { slips.count }
     var totalWins: Int { slips.filter { $0.isWon == true }.count }
     var totalLosses: Int { slips.filter { $0.isWon == false }.count }
-    
-    // ========== CRAZY TIME CORRETTO ==========
-    func spinCrazyTime(bet: String) {
-        // Debug
-        print("=== CRAZY TIME START ===")
-        print("Puntata selezionata: \(bet)")
-        print("Saldo prima: \(balance)")
-        print("Già in rotazione: \(crazyTimeSpinning)")
-        
-        // Controlli
-        guard balance >= 10 else {
-            print("ERRORE: Saldo insufficiente")
-            return
-        }
-        
-        guard !crazyTimeSpinning else {
-            print("ERRORE: Già in rotazione")
-            return
-        }
-        
-        // Setup
-        crazyTimeBet = bet
-        balance -= 10
-        crazyTimeSpinning = true
-        crazyTimeResult = nil
-        
-        // Reset rotazione
-        crazyTimeRotation = 0
-        
-        print("Avvio animazione rotazione...")
-        
-        // Animazione
-        withAnimation(.linear(duration: 3)) {
-            crazyTimeRotation += 360 * 5
-        }
-        
-        // Risultato dopo 3 secondi
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-            // Genera risultato casuale
-            let result = self.crazyTimeSegments.randomElement()!
-            print("Risultato rotazione: \(result)")
-            
-            // Aggiorna stato
-            self.crazyTimeResult = result
-            self.crazyTimeSpinning = false
-            
-            // Calcola vincita
-            if result == bet {
-                var winAmount = 0.0
-                switch bet {
-                case "1": winAmount = 20
-                case "2": winAmount = 30
-                case "5": winAmount = 60
-                case "10": winAmount = 120
-                case "BONUS": winAmount = 200
-                default: break
-                }
-                self.balance += winAmount
-                print("HAI VINTO! +€\(winAmount)")
-            } else {
-                print("Nessuna vincita questa volta")
-            }
-        }
-    }
-    
-    // ========== GRATTA E VINCI CORRETTO ==========
-    func initializeScratchCard() {
-        print("=== INIZIALIZZAZIONE GRATTA E VINCI ===")
-        
-        guard balance >= 5 else {
-            print("ERRORE: Saldo insufficiente (minimo €5)")
-            return
-        }
-        
-        balance -= 5
-        scratching = true
-        
-        let symbols = ["🍒", "🍋", "🍊", "🔔", "💎", "7️⃣"]
-        
-        // Genera 9 simboli con alcune ripetizioni per aumentare chance
-        var cards: [ScratchCard] = []
-        for i in 0..<9 {
-            let symbol = symbols.randomElement()!
-            cards.append(ScratchCard(id: i, symbol: symbol, revealed: false))
-        }
-        
-        // DEBUG: Mostra i simboli generati
-        let symbolList = cards.map { $0.symbol }.joined(separator: " ")
-        print("Carte generate: \(symbolList)")
-        
-        scratchCards = cards
-        print("Gioco inizializzato, saldo attuale: \(balance)")
-    }
-    
-    func revealCard(id: Int) {
-        guard scratching, !scratchCards.isEmpty else {
-            print("ERRORE: Non è possibile grattare ora")
-            return
-        }
-        
-        if let index = scratchCards.firstIndex(where: { $0.id == id }) {
-            // Evita di grattare una carta già rivelata
-            if scratchCards[index].revealed {
-                return
-            }
-            
-            print("Grattando carta \(id)...")
-            
-            // Crea una nuova array con la carta aggiornata
-            var updatedCards = scratchCards
-            updatedCards[index].revealed = true
-            
-            // Aggiorna la proprietà @Published
-            scratchCards = updatedCards
-            
-            // Controlla se tutte le carte sono state grattate
-            let allRevealed = scratchCards.allSatisfy { $0.revealed }
-            print("Carte rivelate: \(scratchCards.filter { $0.revealed }.count)/9")
-            
-            if allRevealed {
-                print("Tutte le carte rivelate, controllo vincita...")
-                checkScratchWin()
-                scratching = false
-            }
-        }
-    }
-    
-    @MainActor
-    private func checkScratchWin() {
-        print("=== CONTROLLO VINCITA GRATTA E VINCI ===")
-        
-        var symbolCounts: [String: Int] = [:]
-        scratchCards.forEach { card in
-            symbolCounts[card.symbol, default: 0] += 1
-            print("Simbolo: \(card.symbol)")
-        }
-        
-        print("Conteggi simboli: \(symbolCounts)")
-        
-        var winAmount = 0.0
-        
-        for (symbol, count) in symbolCounts {
-            if count >= 3 {
-                switch symbol {
-                case "💎": 
-                    winAmount += 100
-                    print("💎 Trovato \(count)x -> +€100")
-                case "7️⃣": 
-                    winAmount += 50
-                    print("7️⃣ Trovato \(count)x -> +€50")
-                case "🔔": 
-                    winAmount += 30
-                    print("🔔 Trovato \(count)x -> +€30")
-                default:
-                    if count >= 5 {
-                        winAmount += 20
-                        print("\(symbol) Trovato \(count)x (5+) -> +€20")
-                    } else {
-                        winAmount += 10
-                        print("\(symbol) Trovato \(count)x (3-4) -> +€10")
-                    }
-                }
-            }
-        }
-        
-        if winAmount > 0 {
-            print("VINCITA TOTALE: €\(winAmount)")
-            balance += winAmount
-        } else {
-            print("Nessuna combinazione vincente")
-        }
-    }
-    
-    func resetScratchCard() {
-        scratchCards = []
-        scratching = false
-        print("Gratta e Vinci resettato")
-    }
 }
 
 // MARK: - MAIN VIEW
@@ -456,6 +265,9 @@ struct ContentView: View {
                 BetSheet(picks: $vm.currentPicks, balance: $vm.balance, totalOdd: vm.totalOdd) { stake in vm.confirmSlip(stake: stake) }
             }
             .sheet(item: $vm.showSlipDetail) { SlipDetailView(slip: $0) }
+            .sheet(item: $vm.upcomingGame) { gameName in
+                UpcomingGameView(gameName: gameName)
+            }
         }
     }
     
@@ -473,400 +285,148 @@ struct ContentView: View {
     }
     
     private var gamesView: some View {
-        Group {
-            if let game = vm.activeGame {
-                if game == "crazyTime" {
-                    crazyTimeView
-                } else if game == "scratch" {
-                    scratchCardView
-                }
-            } else {
-                gameSelectionView
-            }
-        }
-    }
-    
-    private var gameSelectionView: some View {
         ScrollView {
             VStack(spacing: 20) {
+                // Crazy Time Button
                 Button {
-                    withAnimation(.spring(response: 0.5, dampingFraction: 0.7)) {
-                        vm.activeGame = "crazyTime"
-                    }
+                    vm.upcomingGame = "Crazy Time"
                 } label: {
-                    ZStack {
-                        LinearGradient(colors: [.yellow, .orange, .red, .pink], startPoint: .topLeading, endPoint: .bottomTrailing)
-                            .overlay(Color.black.opacity(0.2))
-                        VStack(spacing: 12) {
-                            HStack {
-                                Image(systemName: "trophy.fill").font(.system(size: 40)).foregroundColor(.white)
-                                Spacer()
-                                Image(systemName: "sparkles").font(.system(size: 30)).foregroundColor(.yellow)
-                            }
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text("🎡 Crazy Time").font(.system(size: 36, weight: .bold)).foregroundColor(.white)
-                                Text("Gira la ruota e vinci fino a €200!").font(.system(size: 18)).foregroundColor(.white.opacity(0.9))
-                                HStack {
-                                    Text("Puntata: €10").font(.headline).padding(.horizontal, 16).padding(.vertical, 8).background(Color.white.opacity(0.3)).cornerRadius(20).foregroundColor(.white)
-                                    Spacer()
-                                }
-                            }
-                        }
-                        .padding(24)
-                    }
-                    .frame(height: 220)
-                    .cornerRadius(24)
+                    gameCard(
+                        title: "🎡 Crazy Time",
+                        description: "Gira la ruota e vinci fino a €200!",
+                        gradientColors: [.yellow, .orange, .red, .pink],
+                        icon1: "trophy.fill",
+                        icon2: "sparkles",
+                        betAmount: "€10"
+                    )
                 }
-                .buttonStyle(ScaleButtonStyle())
                 
+                // Gratta e Vinci Button
                 Button {
-                    withAnimation(.spring(response: 0.5, dampingFraction: 0.7)) {
-                        vm.activeGame = "scratch"
-                    }
+                    vm.upcomingGame = "Gratta e Vinci"
                 } label: {
-                    ZStack {
-                        LinearGradient(colors: [.green, .mint, .teal], startPoint: .topLeading, endPoint: .bottomTrailing)
-                            .overlay(Color.black.opacity(0.2))
-                        VStack(spacing: 12) {
-                            HStack {
-                                Image(systemName: "sparkles").font(.system(size: 40)).foregroundColor(.white)
-                                Spacer()
-                                Image(systemName: "trophy.fill").font(.system(size: 30)).foregroundColor(.yellow)
-                            }
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text("✨ Gratta e Vinci").font(.system(size: 36, weight: .bold)).foregroundColor(.white)
-                                Text("Scopri i simboli fortunati!").font(.system(size: 18)).foregroundColor(.white.opacity(0.9))
-                                HStack {
-                                    Text("Puntata: €5").font(.headline).padding(.horizontal, 16).padding(.vertical, 8).background(Color.white.opacity(0.3)).cornerRadius(20).foregroundColor(.white)
-                                    Spacer()
-                                }
-                            }
-                        }
-                        .padding(24)
-                    }
-                    .frame(height: 220)
-                    .cornerRadius(24)
+                    gameCard(
+                        title: "✨ Gratta e Vinci",
+                        description: "Scopri i simboli fortunati!",
+                        gradientColors: [.green, .mint, .teal],
+                        icon1: "sparkles",
+                        icon2: "trophy.fill",
+                        betAmount: "€5"
+                    )
                 }
-                .buttonStyle(ScaleButtonStyle())
+                
+                // Blackjack Button
+                Button {
+                    vm.upcomingGame = "Blackjack"
+                } label: {
+                    gameCard(
+                        title: "♠️ Blackjack",
+                        description: "Sfida il banco e vinci il 21!",
+                        gradientColors: [.black, .gray, .black],
+                        icon1: "suit.spade.fill",
+                        icon2: "suit.heart.fill",
+                        betAmount: "€20"
+                    )
+                }
+                
+                // Slot Machine Button
+                Button {
+                    vm.upcomingGame = "Slot Machine"
+                } label: {
+                    gameCard(
+                        title: "🎰 Slot Machine",
+                        description: "Allinea i simboli per vincere!",
+                        gradientColors: [.purple, .blue, .purple],
+                        icon1: "dollarsign.circle.fill",
+                        icon2: "crown.fill",
+                        betAmount: "€5"
+                    )
+                }
+                
+                // Poker Button
+                Button {
+                    vm.upcomingGame = "Poker"
+                } label: {
+                    gameCard(
+                        title: "🃏 Poker",
+                        description: "Sfida altri giocatori in tempo reale!",
+                        gradientColors: [.blue, .green, .blue],
+                        icon1: "person.2.fill",
+                        icon2: "flag.fill",
+                        betAmount: "€50"
+                    )
+                }
+                
+                // Roulette Button
+                Button {
+                    vm.upcomingGame = "Roulette"
+                } label: {
+                    gameCard(
+                        title: "🎲 Roulette",
+                        description: "Scegli il numero fortunato!",
+                        gradientColors: [.red, .black, .red],
+                        icon1: "circle.grid.cross.fill",
+                        icon2: "number.circle.fill",
+                        betAmount: "€10"
+                    )
+                }
             }
             .padding()
         }
     }
     
-    // ========== CRAZY TIME VIEW CORRETTA ==========
-    private var crazyTimeView: some View {
-        ScrollView {
-            VStack(spacing: 24) {
-                // Header
+    private func gameCard(
+        title: String,
+        description: String,
+        gradientColors: [Color],
+        icon1: String,
+        icon2: String,
+        betAmount: String
+    ) -> some View {
+        ZStack {
+            LinearGradient(colors: gradientColors, startPoint: .topLeading, endPoint: .bottomTrailing)
+                .overlay(Color.black.opacity(0.2))
+            
+            VStack(spacing: 12) {
                 HStack {
-                    Button {
-                        withAnimation {
-                            vm.activeGame = nil
-                            vm.crazyTimeResult = nil
-                            vm.crazyTimeBet = nil
-                            vm.crazyTimeSpinning = false
-                        }
-                    } label: {
-                        HStack {
-                            Image(systemName: "chevron.left")
-                            Text("Indietro")
-                        }
-                        .foregroundColor(.accentCyan)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(Color.white.opacity(0.1))
-                        .cornerRadius(10)
-                    }
-                    Spacer()
-                    
-                    if vm.crazyTimeSpinning {
-                        Text("Rotazione...")
-                            .foregroundColor(.accentYellow)
-                    }
-                }
-                .padding(.horizontal)
-                
-                // Ruota
-                ZStack {
-                    // Ruota principale
-                    Circle()
-                        .fill(LinearGradient(colors: [.red, .orange, .yellow, .pink], 
-                              startPoint: .topLeading, endPoint: .bottomTrailing))
-                        .frame(width: 280, height: 280)
-                        .overlay(Circle().stroke(Color.accentYellow, lineWidth: 8))
-                        .shadow(color: .yellow.opacity(0.5), radius: 20)
-                        .rotationEffect(.degrees(vm.crazyTimeRotation))
-                    
-                    // Centro ruota
-                    Circle()
-                        .fill(Color.black.opacity(0.8))
-                        .frame(width: 100, height: 100)
-                        .overlay(
-                            Text(vm.crazyTimeSpinning ? "🎰" : (vm.crazyTimeResult ?? "?"))
-                                .font(.system(size: vm.crazyTimeSpinning ? 48 : 60))
-                                .foregroundColor(.white)
-                        )
-                }
-                
-                // Freccia indicatrice (FISSA)
-                Image(systemName: "arrowtriangle.down.fill")
-                    .font(.system(size: 40))
-                    .foregroundColor(.accentYellow)
-                    .offset(y: -140)
-                
-                // Messaggio risultato
-                if let result = vm.crazyTimeResult, !vm.crazyTimeSpinning {
-                    VStack(spacing: 12) {
-                        if result == vm.crazyTimeBet {
-                            Text("🎉 HAI VINTO!")
-                                .font(.title.bold())
-                                .foregroundColor(.green)
-                            
-                            if let bet = vm.crazyTimeBet {
-                                Text("+€\(winAmountForBet(bet: bet), specifier: "%.0f")")
-                                    .font(.title2)
-                                    .foregroundColor(.accentYellow)
-                            }
-                        } else {
-                            Text("😢 Riprova!")
-                                .font(.title.bold())
-                                .foregroundColor(.red)
-                            
-                            Text("Hai puntato \(vm.crazyTimeBet ?? "-"), è uscito \(result)")
-                                .font(.subheadline)
-                                .foregroundColor(.gray)
-                        }
-                    }
-                    .padding()
-                    .background(Color.white.opacity(0.1))
-                    .cornerRadius(16)
-                    .transition(.scale)
-                }
-                
-                // Pulsanti di puntata
-                VStack(spacing: 16) {
-                    Text("Scegli la tua puntata (€10)")
+                    Image(systemName: icon1)
+                        .font(.system(size: 40))
                         .foregroundColor(.white)
-                        .font(.headline)
-                    
-                    HStack(spacing: 12) {
-                        ForEach(["1", "2", "5", "10", "BONUS"], id: \.self) { bet in
-                            Button {
-                                if !vm.crazyTimeSpinning && vm.balance >= 10 {
-                                    vm.spinCrazyTime(bet: bet)
-                                }
-                            } label: {
-                                VStack(spacing: 4) {
-                                    Text(bet)
-                                        .font(.title2.bold())
-                                    Text("x\(winMultiplierForBet(bet: bet))")
-                                        .font(.caption)
-                                        .opacity(0.9)
-                                }
-                                .frame(maxWidth: .infinity)
-                                .frame(height: 70)
-                                .background(
-                                    bet == "BONUS" ? 
-                                    LinearGradient(colors: [.purple, .pink], startPoint: .top, endPoint: .bottom) : 
-                                    LinearGradient(colors: [.accentYellow, .orange], startPoint: .top, endPoint: .bottom)
-                                )
-                                .foregroundColor(bet == "BONUS" ? .white : .black)
-                                .cornerRadius(16)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 16)
-                                        .stroke(vm.crazyTimeBet == bet ? Color.accentCyan : Color.clear, lineWidth: 3)
-                                )
-                                .shadow(color: vm.crazyTimeBet == bet ? .accentCyan.opacity(0.5) : .clear, radius: 5)
-                            }
-                            .disabled(vm.crazyTimeSpinning || vm.balance < 10)
-                            .opacity((vm.crazyTimeSpinning || vm.balance < 10) ? 0.5 : 1)
-                        }
-                    }
-                    .padding(.horizontal)
-                    
-                    // Info saldo
-                    Text("Saldo: €\(vm.balance, specifier: "%.2f")")
-                        .foregroundColor(vm.balance >= 10 ? .accentCyan : .red)
-                        .font(.subheadline)
-                }
-                
-                Spacer()
-            }
-            .padding()
-        }
-    }
-    
-    // ========== GRATTA E VINCI VIEW CORRETTA ==========
-    private var scratchCardView: some View {
-        ScrollView {
-            VStack(spacing: 24) {
-                // Header
-                HStack {
-                    Button {
-                        withAnimation {
-                            vm.activeGame = nil
-                            vm.resetScratchCard()
-                        }
-                    } label: {
-                        HStack {
-                            Image(systemName: "chevron.left")
-                            Text("Indietro")
-                        }
-                        .foregroundColor(.accentCyan)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(Color.white.opacity(0.1))
-                        .cornerRadius(10)
-                    }
                     Spacer()
-                    
-                    if vm.scratching && !vm.scratchCards.isEmpty {
-                        Text("Gratta le carte!")
-                            .foregroundColor(.accentCyan)
-                            .font(.subheadline)
-                    }
+                    Image(systemName: icon2)
+                        .font(.system(size: 30))
+                        .foregroundColor(.yellow)
                 }
-                .padding(.horizontal)
                 
-                if vm.scratchCards.isEmpty {
-                    // Schermata iniziale
-                    VStack(spacing: 30) {
-                        Text("✨ Gratta e Vinci")
-                            .font(.largeTitle.bold())
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(title)
+                        .font(.system(size: 36, weight: .bold))
+                        .foregroundColor(.white)
+                    
+                    Text(description)
+                        .font(.system(size: 18))
+                        .foregroundColor(.white.opacity(0.9))
+                    
+                    HStack {
+                        Text("Puntata: \(betAmount)")
+                            .font(.headline)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
+                            .background(Color.white.opacity(0.3))
+                            .cornerRadius(20)
                             .foregroundColor(.white)
-                        
-                        Text("Gratta 9 carte e trova 3+ simboli uguali per vincere!")
-                            .foregroundColor(.white.opacity(0.8))
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal)
-                        
-                        VStack(spacing: 15) {
-                            Text("💎 = €100")
-                            Text("7️⃣ = €50")
-                            Text("🔔 = €30")
-                            Text("5+ simboli uguali = €20")
-                            Text("3-4 simboli uguali = €10")
-                        }
-                        .foregroundColor(.accentYellow)
-                        .font(.headline)
-                        
-                        Button {
-                            vm.initializeScratchCard()
-                        } label: {
-                            Text("GIOCA (€5)")
-                                .font(.title.bold())
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 20)
-                                .background(
-                                    LinearGradient(colors: [.green, .mint], 
-                                                  startPoint: .leading, endPoint: .trailing)
-                                )
-                                .foregroundColor(.white)
-                                .cornerRadius(20)
-                                .shadow(color: .green.opacity(0.5), radius: 10)
-                        }
-                        .disabled(vm.balance < 5)
-                        .opacity(vm.balance < 5 ? 0.5 : 1)
-                        
-                        Text("Saldo: €\(vm.balance, specifier: "%.2f")")
-                            .foregroundColor(vm.balance >= 5 ? .accentCyan : .red)
-                    }
-                    .padding()
-                } else {
-                    // Griglia di carte
-                    VStack(spacing: 20) {
-                        Text("Gratta tutte le carte!")
-                            .font(.title2.bold())
-                            .foregroundColor(.white)
-                        
-                        LazyVGrid(columns: [
-                            GridItem(.flexible()),
-                            GridItem(.flexible()),
-                            GridItem(.flexible())
-                        ], spacing: 12) {
-                            ForEach(vm.scratchCards) { card in
-                                Button {
-                                    if vm.scratching && !card.revealed {
-                                        withAnimation(.spring(response: 0.3)) {
-                                            vm.revealCard(id: card.id)
-                                        }
-                                    }
-                                } label: {
-                                    ZStack {
-                                        // Carta non grattata
-                                        if !card.revealed {
-                                            RoundedRectangle(cornerRadius: 16)
-                                                .fill(
-                                                    LinearGradient(
-                                                        colors: [.gray.opacity(0.8), .gray],
-                                                        startPoint: .topLeading,
-                                                        endPoint: .bottomTrailing
-                                                    )
-                                                )
-                                                .overlay(
-                                                    RoundedRectangle(cornerRadius: 16)
-                                                        .stroke(Color.white.opacity(0.3), lineWidth: 2)
-                                                )
-                                            
-                                            Text("?")
-                                                .font(.system(size: 50, weight: .bold))
-                                                .foregroundColor(.white)
-                                        } 
-                                        // Carta grattata
-                                        else {
-                                            RoundedRectangle(cornerRadius: 16)
-                                                .fill(Color.white.opacity(0.15))
-                                                .overlay(
-                                                    RoundedRectangle(cornerRadius: 16)
-                                                        .stroke(Color.accentCyan.opacity(0.5), lineWidth: 2)
-                                                )
-                                            
-                                            Text(card.symbol)
-                                                .font(.system(size: 50))
-                                                .scaleEffect(1.1)
-                                        }
-                                    }
-                                    .frame(height: 100)
-                                    .shadow(color: card.revealed ? .accentCyan.opacity(0.3) : .clear, radius: 5)
-                                }
-                                .disabled(card.revealed || !vm.scratching)
-                                .scaleEffect(card.revealed ? 0.95 : 1.0)
-                            }
-                        }
-                        .padding(.horizontal)
-                        
-                        // Pulsante nuova partita
-                        if vm.scratchCards.allSatisfy({ $0.revealed }) {
-                            VStack(spacing: 15) {
-                                Text("Partita terminata!")
-                                    .font(.headline)
-                                    .foregroundColor(.accentCyan)
-                                
-                                Button {
-                                    vm.resetScratchCard()
-                                } label: {
-                                    Text("NUOVA PARTITA")
-                                        .font(.headline.bold())
-                                        .frame(maxWidth: .infinity)
-                                        .padding()
-                                        .background(Color.blue)
-                                        .foregroundColor(.white)
-                                        .cornerRadius(16)
-                                }
-                            }
-                            .padding(.top)
-                        }
-                        
-                        // Contatore carte grattate
-                        let revealedCount = vm.scratchCards.filter { $0.revealed }.count
-                        Text("Carte grattate: \(revealedCount)/9")
-                            .foregroundColor(.white.opacity(0.7))
-                            .font(.subheadline)
+                        Spacer()
                     }
                 }
             }
-            .padding()
+            .padding(24)
         }
+        .frame(height: 220)
+        .cornerRadius(24)
+        .overlay(
+            RoundedRectangle(cornerRadius: 24)
+                .stroke(Color.accentCyan.opacity(0.3), lineWidth: 1)
+        )
     }
     
     private var calendarBar: some View {
@@ -931,16 +491,24 @@ struct ContentView: View {
         ScrollView {
             VStack(spacing: 12) {
                 if vm.slips.isEmpty {
-                    Text("Nessuna scommessa piazzata").foregroundColor(.gray).padding()
+                    Text("Nessuna scommessa piazzata")
+                        .foregroundColor(.gray)
+                        .padding()
                 } else {
                     ForEach(vm.slips) { slip in
                         Button { vm.showSlipDetail = slip } label: {
                             VStack(alignment: .leading, spacing: 4) {
-                                Text("Quota \(slip.totalOdd, specifier: "%.2f")").foregroundColor(.accentCyan)
-                                Text("Puntata €\(slip.stake, specifier: "%.2f")").foregroundColor(.white)
-                                Text("Vincita potenziale €\(slip.potentialWin, specifier: "%.2f")").foregroundColor(.gray).font(.caption)
+                                Text("Quota \(slip.totalOdd, specifier: "%.2f")")
+                                    .foregroundColor(.accentCyan)
+                                Text("Puntata €\(slip.stake, specifier: "%.2f")")
+                                    .foregroundColor(.white)
+                                Text("Vincita potenziale €\(slip.potentialWin, specifier: "%.2f")")
+                                    .foregroundColor(.gray)
+                                    .font(.caption)
                                 if let won = slip.isWon {
-                                    Text(won ? "ESITO: VINTA" : "ESITO: PERSA").foregroundColor(won ? .green : .red).font(.headline)
+                                    Text(won ? "ESITO: VINTA" : "ESITO: PERSA")
+                                        .foregroundColor(won ? .green : .red)
+                                        .font(.headline)
                                 }
                             }
                             .padding()
@@ -1018,9 +586,7 @@ struct ContentView: View {
         return Button {
             withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
                 vm.selectedTab = index
-                if index != 2 {
-                    vm.activeGame = nil
-                }
+                vm.upcomingGame = nil
             }
         } label: {
             VStack(spacing: 8) {
@@ -1050,28 +616,119 @@ struct ContentView: View {
             }
         }
     }
+}
+
+// MARK: - UPCOMING GAME VIEW (Sheet)
+
+struct UpcomingGameView: View {
+    let gameName: String
+    @Environment(\.dismiss) var dismiss
     
-    // Funzioni helper per Crazy Time
-    private func winAmountForBet(bet: String) -> Double {
-        switch bet {
-        case "1": return 20
-        case "2": return 30
-        case "5": return 60
-        case "10": return 120
-        case "BONUS": return 200
-        default: return 0
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+            
+            VStack(spacing: 30) {
+                // Draggable indicator
+                Capsule()
+                    .fill(Color.gray.opacity(0.5))
+                    .frame(width: 40, height: 5)
+                    .padding(.top, 10)
+                
+                Spacer()
+                
+                // Animated icon
+                Image(systemName: "clock.badge.exclamationmark")
+                    .font(.system(size: 100))
+                    .foregroundColor(.accentCyan)
+                    .symbolEffect(.pulse, options: .repeating)
+                
+                // Title
+                Text("Presto in arrivo!")
+                    .font(.system(size: 42, weight: .bold))
+                    .foregroundColor(.white)
+                    .multilineTextAlignment(.center)
+                
+                // Game name
+                Text(gameName)
+                    .font(.title)
+                    .foregroundColor(.accentYellow)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 10)
+                    .background(Color.white.opacity(0.1))
+                    .cornerRadius(15)
+                
+                // Description
+                Text("Stiamo lavorando per portarti\nun'esperienza di gioco eccezionale!")
+                    .font(.title3)
+                    .foregroundColor(.white.opacity(0.8))
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 30)
+                
+                // Coming soon text with animation
+                VStack(spacing: 15) {
+                    Text("🎮 Nuove funzionalità")
+                        .font(.headline)
+                        .foregroundColor(.accentCyan)
+                    
+                    HStack(spacing: 20) {
+                        FeatureBadge(icon: "trophy.fill", text: "Vincite")
+                        FeatureBadge(icon: "person.2.fill", text: "Multiplayer")
+                        FeatureBadge(icon: "sparkles", text: "Bonus")
+                    }
+                }
+                .padding()
+                .background(Color.white.opacity(0.05))
+                .cornerRadius(20)
+                .padding(.horizontal, 30)
+                
+                Spacer()
+                Spacer()
+                
+                // Back button
+                Button(action: {
+                    dismiss()
+                }) {
+                    Text("Torna ai giochi")
+                        .font(.headline)
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.accentCyan)
+                        .cornerRadius(15)
+                        .padding(.horizontal, 40)
+                }
+                
+                // Swipe hint
+                Text("👆 Puoi anche scorrere verso il basso per chiudere")
+                    .font(.caption)
+                    .foregroundColor(.gray)
+                    .padding(.bottom, 20)
+            }
+            .padding()
         }
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
+        .interactiveDismissDisabled(false)
     }
+}
+
+struct FeatureBadge: View {
+    let icon: String
+    let text: String
     
-    private func winMultiplierForBet(bet: String) -> Double {
-        switch bet {
-        case "1": return 2.0
-        case "2": return 3.0
-        case "5": return 6.0
-        case "10": return 12.0
-        case "BONUS": return 20.0
-        default: return 1.0
+    var body: some View {
+        VStack(spacing: 8) {
+            Image(systemName: icon)
+                .font(.title2)
+                .foregroundColor(.accentYellow)
+            Text(text)
+                .font(.caption)
+                .foregroundColor(.white.opacity(0.8))
         }
+        .padding(10)
+        .background(Color.white.opacity(0.05))
+        .cornerRadius(10)
     }
 }
 
@@ -1163,11 +820,15 @@ struct BetSheet: View {
             }
             .padding()
         }
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
     }
 }
 
 struct SlipDetailView: View {
     let slip: BetSlip
+    @Environment(\.dismiss) var dismiss
+    
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
@@ -1225,9 +886,25 @@ struct SlipDetailView: View {
                     }
                     .padding(.horizontal)
                 }
+                
+                Button(action: {
+                    dismiss()
+                }) {
+                    Text("Chiudi")
+                        .font(.headline)
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.accentCyan)
+                        .cornerRadius(15)
+                        .padding(.horizontal)
+                }
+                .padding(.top, 10)
             }
             .padding(.top)
         }
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
     }
 }
 
