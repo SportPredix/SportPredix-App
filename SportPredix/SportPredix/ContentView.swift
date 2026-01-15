@@ -416,7 +416,7 @@ struct ContentView: View {
         let isYesterday = vm.selectedDayIndex == 0
 
         return ScrollView {
-            VStack(spacing: 16) {
+            VStack(spacing:0) {
                 ForEach(groupedMatches.keys.sorted(), id: \.self) { time in
                     VStack(spacing: 10) {
                         HStack {
