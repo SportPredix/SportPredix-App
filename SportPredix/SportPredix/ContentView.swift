@@ -176,7 +176,7 @@ final class BettingViewModel: ObservableObject {
     ]
     
     // API Config - INSERISCI LA TUA API KEY QUI
-    private let apiKey = "" // Ottienila da https://www.football-data.org/
+    private let apiKey = "1509673c3a344745b0159b18dfbc0d1c" // Ottienila da https://www.football-data.org/
     private let baseURL = "https://api.football-data.org/v4"
     
     // Proprietà pubblica per verificare se l'API key è configurata
