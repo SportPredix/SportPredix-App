@@ -59,8 +59,11 @@ struct Match: Identifiable, Codable {
     let odds: Odds
     var result: MatchOutcome?
     var goals: Int?
-    var competition: String? // Nuovo campo per l'API
-    var status: String? // Nuovo campo per l'API
+    var competition: String?
+    var status: String?
+    var commenceTime: Date?
+    var sportKey: String?
+    var bookmaker: String?
 }
 
 struct BetPick: Identifiable, Codable {
@@ -85,47 +88,37 @@ struct BetSlip: Identifiable, Codable {
     var expectedValue: Double { potentialWin * impliedProbability - stake }
 }
 
-// MARK: - API MODELS
+// MARK: - ODSAPI MODELS
 
-struct APIMatch: Codable {
-    let id: Int
-    let utcDate: String
-    let status: String
-    let homeTeam: APITeam
-    let awayTeam: APITeam
-    let score: APIScore
-    let competition: APICompetition
-    
-    enum CodingKeys: String, CodingKey {
-        case id, utcDate, status, homeTeam, awayTeam, score, competition
-    }
+struct OddsAPIResponse: Codable {
+    let data: [OddsAPIMatch]
+    let success: Bool
 }
 
-struct APITeam: Codable {
-    let id: Int
+struct OddsAPIMatch: Codable {
+    let id: String
+    let sportKey: String
+    let sportTitle: String
+    let commenceTime: String
+    let homeTeam: String
+    let awayTeam: String
+    let bookmakers: [Bookmaker]
+}
+
+struct Bookmaker: Codable {
+    let key: String
+    let title: String
+    let markets: [Market]
+}
+
+struct Market: Codable {
+    let key: String
+    let outcomes: [Outcome]
+}
+
+struct Outcome: Codable {
     let name: String
-    let shortName: String?
-    let tla: String?
-}
-
-struct APIScore: Codable {
-    let winner: String?
-    let fullTime: APITimeScore?
-}
-
-struct APITimeScore: Codable {
-    let home: Int?
-    let away: Int?
-}
-
-struct APICompetition: Codable {
-    let id: Int
-    let name: String
-    let code: String
-}
-
-struct MatchesResponse: Codable {
-    let matches: [APIMatch]
+    let price: Double
 }
 
 // MARK: - VIEW MODEL
@@ -163,10 +156,16 @@ final class BettingViewModel: ObservableObject {
     @Published var isLoading = false
     @Published var apiError: String?
     @Published var useRealMatches = false
+    @Published var selectedSport = "soccer"
+    @Published var selectedRegion = "eu"
+    @Published var selectedBookmaker = "bet365"
     
     private let slipsKey = "savedSlips"
     private let matchesKey = "savedMatches"
     private let useRealMatchesKey = "useRealMatches"
+    private let selectedSportKey = "selectedSport"
+    private let selectedRegionKey = "selectedRegion"
+    private let selectedBookmakerKey = "selectedBookmaker"
     
     private let teams = [
         "Napoli","Inter","Milan","Juventus","Roma","Lazio",
@@ -175,14 +174,41 @@ final class BettingViewModel: ObservableObject {
         "Bayern","Dortmund","Leipzig","Leverkusen"
     ]
     
-    // API Config - INSERISCI LA TUA API KEY QUI
-    private let apiKey = "1509673c3a344745b0159b18dfbc0d1c" // Ottienila da https://www.football-data.org/
-    private let baseURL = "https://api.football-data.org/v4"
+    // ODSAPI CONFIG - INSERISCI LA TUA API KEY QUI
+    private let apiKey = "17e274223bee2b2929f40e64b4894926" // Ottienila da https://the-odds-api.com/
+    private let baseURL = "https://api.the-odds-api.com/v4/sports"
     
     // Proprietà pubblica per verificare se l'API key è configurata
     var hasAPIKey: Bool {
         return !apiKey.isEmpty
     }
+    
+    // Sport disponibili
+    let availableSports = [
+        ("soccer", "⚽ Calcio"),
+        ("basketball_nba", "🏀 NBA"),
+        ("americanfootball_nfl", "🏈 NFL"),
+        ("baseball_mlb", "⚾ MLB"),
+        ("icehockey_nhl", "🏒 NHL")
+    ]
+    
+    // Regioni disponibili
+    let availableRegions = [
+        ("eu", "🇪🇺 Europa"),
+        ("us", "🇺🇸 USA"),
+        ("uk", "🇬🇧 UK"),
+        ("au", "🇦🇺 Australia")
+    ]
+    
+    // Bookmakers disponibili
+    let availableBookmakers = [
+        ("bet365", "Bet365"),
+        ("betfair", "Betfair"),
+        ("williamhill", "William Hill"),
+        ("bwin", "BWin"),
+        ("unibet", "Unibet"),
+        ("pinnacle", "Pinnacle")
+    ]
     
     init() {
         let savedBalance = UserDefaults.standard.double(forKey: "balance")
@@ -194,6 +220,9 @@ final class BettingViewModel: ObservableObject {
         self.privacyEnabled = UserDefaults.standard.object(forKey: "privacyEnabled") as? Bool ?? false
         
         self.useRealMatches = UserDefaults.standard.object(forKey: useRealMatchesKey) as? Bool ?? false
+        self.selectedSport = UserDefaults.standard.string(forKey: selectedSportKey) ?? "soccer"
+        self.selectedRegion = UserDefaults.standard.string(forKey: selectedRegionKey) ?? "eu"
+        self.selectedBookmaker = UserDefaults.standard.string(forKey: selectedBookmakerKey) ?? "bet365"
         
         self.slips = loadSlips()
         self.dailyMatches = loadMatches()
@@ -202,7 +231,7 @@ final class BettingViewModel: ObservableObject {
         
         // Se l'API key è presente e l'opzione è attiva, carica le partite reali
         if useRealMatches && hasAPIKey {
-            fetchTodaysRealMatches()
+            fetchRealOdds()
         }
     }
     
@@ -213,41 +242,75 @@ final class BettingViewModel: ObservableObject {
         UserDefaults.standard.set(useRealMatches, forKey: useRealMatchesKey)
         
         if useRealMatches && hasAPIKey {
-            fetchTodaysRealMatches()
+            fetchRealOdds()
         } else if !useRealMatches {
             // Torna alle partite simulate
             generateTodayIfNeeded()
         } else if useRealMatches && !hasAPIKey {
-            apiError = "API key mancante. Ottienila da football-data.org"
+            apiError = "API key mancante. Ottienila da the-odds-api.com"
         }
     }
     
-    func fetchTodaysRealMatches() {
+    func changeSport(to sport: String) {
+        selectedSport = sport
+        UserDefaults.standard.set(sport, forKey: selectedSportKey)
+        
+        if useRealMatches && hasAPIKey {
+            fetchRealOdds()
+        }
+    }
+    
+    func changeRegion(to region: String) {
+        selectedRegion = region
+        UserDefaults.standard.set(region, forKey: selectedRegionKey)
+        
+        if useRealMatches && hasAPIKey {
+            fetchRealOdds()
+        }
+    }
+    
+    func changeBookmaker(to bookmaker: String) {
+        selectedBookmaker = bookmaker
+        UserDefaults.standard.set(bookmaker, forKey: selectedBookmakerKey)
+        
+        if useRealMatches && hasAPIKey {
+            fetchRealOdds()
+        }
+    }
+    
+    func fetchRealOdds() {
         guard hasAPIKey else {
-            apiError = "API key mancante. Ottienila da football-data.org"
+            apiError = "API key mancante. Ottienila da the-odds-api.com"
             return
         }
         
         isLoading = true
         apiError = nil
         
+        // Calcola le date per oggi
         let dateFormatter = DateFormatter()
-        dateFormatter.dateFormat = "yyyy-MM-dd"
-        let today = dateFormatter.string(from: Date())
+        dateFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss'Z'"
+        dateFormatter.timeZone = TimeZone(secondsFromGMT: 0)
         
-        // URL per le partite di oggi
-        let urlString = "\(baseURL)/matches?dateFrom=\(today)&dateTo=\(today)"
+        let now = Date()
+        let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: now)!
         
-        guard let url = URL(string: urlString) else {
+        let fromTime = dateFormatter.string(from: now)
+        let toTime = dateFormatter.string(from: tomorrow)
+        
+        // URL per le quote di oggi
+        let urlString = "\(baseURL)/\(selectedSport)/odds/?apiKey=\(apiKey)&regions=\(selectedRegion)&markets=h2h,spreads&oddsFormat=decimal&bookmakers=\(selectedBookmaker)&commenceTimeFrom=\(fromTime)&commenceTimeTo=\(toTime)"
+        
+        guard let encodedURLString = urlString.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+              let url = URL(string: encodedURLString) else {
             apiError = "URL non valido"
             isLoading = false
             return
         }
         
-        var request = URLRequest(url: url)
-        request.setValue(apiKey, forHTTPHeaderField: "X-Auth-Token")
+        print("🔗 Fetching URL: \(url)")
         
-        let task = URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+        let task = URLSession.shared.dataTask(with: url) { [weak self] data, response, error in
             DispatchQueue.main.async {
                 self?.isLoading = false
                 
@@ -262,13 +325,14 @@ final class BettingViewModel: ObservableObject {
                 }
                 
                 do {
-                    let response = try JSONDecoder().decode(MatchesResponse.self, from: data)
-                    self?.processAPIMatches(response.matches)
+                    let response = try JSONDecoder().decode([OddsAPIMatch].self, from: data)
+                    print("✅ Ricevute \(response.count) partite")
+                    self?.processRealOdds(response)
                 } catch {
                     self?.apiError = "Errore decodifica: \(error.localizedDescription)"
-                    print("JSON error: \(error)")
+                    print("❌ JSON error: \(error)")
                     if let jsonString = String(data: data, encoding: .utf8) {
-                        print("JSON ricevuto: \(jsonString)")
+                        print("📄 JSON ricevuto: \(jsonString.prefix(500))...")
                     }
                 }
             }
@@ -277,72 +341,87 @@ final class BettingViewModel: ObservableObject {
         task.resume()
     }
     
-    private func processAPIMatches(_ apiMatches: [APIMatch]) {
+    private func processRealOdds(_ apiMatches: [OddsAPIMatch]) {
         let todayKey = keyForDate(Date())
         var convertedMatches: [Match] = []
         
         for apiMatch in apiMatches {
-            // Converte la data UTC in orario locale
+            // Converte la data
             let dateFormatter = DateFormatter()
             dateFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ssZ"
             dateFormatter.locale = Locale(identifier: "en_US_POSIX")
             
             var timeString = "TBD"
-            if let date = dateFormatter.date(from: apiMatch.utcDate) {
+            var commenceTimeDate: Date? = nil
+            
+            if let date = dateFormatter.date(from: apiMatch.commenceTime) {
+                commenceTimeDate = date
                 let timeFormatter = DateFormatter()
                 timeFormatter.dateFormat = "HH:mm"
                 timeFormatter.timeZone = TimeZone.current
                 timeString = timeFormatter.string(from: date)
             }
             
-            // Crea quote casuali (l'API non fornisce quote reali nella versione gratuita)
-            let odds = Odds(
-                home: Double.random(in: 1.20...2.50),
-                draw: Double.random(in: 2.80...4.50),
-                away: Double.random(in: 2.50...7.00),
-                homeDraw: Double.random(in: 1.10...1.50),
-                homeAway: Double.random(in: 1.15...1.30),
-                drawAway: Double.random(in: 1.20...1.60),
-                over05: Double.random(in: 1.05...1.30),
-                under05: Double.random(in: 3.00...9.00),
-                over15: Double.random(in: 1.30...2.00),
-                under15: Double.random(in: 1.30...3.45),
-                over25: Double.random(in: 1.70...2.20),
-                under25: Double.random(in: 1.70...2.20),
-                over35: Double.random(in: 2.50...4.00),
-                under35: Double.random(in: 1.10...1.50),
-                over45: Double.random(in: 4.00...8.00),
-                under45: Double.random(in: 1.05...1.30)
-            )
+            // Estrai le quote reali
+            var homeOdd: Double = 1.8
+            var drawOdd: Double = 3.5
+            var awayOdd: Double = 4.0
             
-            // Determina il risultato basato sul punteggio
-            var result: MatchOutcome?
-            var goals: Int?
-            
-            if let score = apiMatch.score.fullTime {
-                let homeGoals = score.home ?? 0
-                let awayGoals = score.away ?? 0
-                goals = homeGoals + awayGoals
-                
-                if homeGoals > awayGoals {
-                    result = .home
-                } else if awayGoals > homeGoals {
-                    result = .away
-                } else {
-                    result = .draw
+            // Cerca le quote del bookmaker selezionato
+            if let bookmaker = apiMatch.bookmakers.first(where: { $0.key == selectedBookmaker }) {
+                if let h2hMarket = bookmaker.markets.first(where: { $0.key == "h2h" }) {
+                    for outcome in h2hMarket.outcomes {
+                        if outcome.name == apiMatch.homeTeam {
+                            homeOdd = outcome.price
+                        } else if outcome.name == apiMatch.awayTeam {
+                            awayOdd = outcome.price
+                        } else if outcome.name.lowercased().contains("draw") {
+                            drawOdd = outcome.price
+                        }
+                    }
                 }
             }
             
+            // Calcola le quote derivate
+            let homeDrawOdd = calculateHomeDrawOdd(home: homeOdd, draw: drawOdd)
+            let homeAwayOdd = calculateHomeAwayOdd(home: homeOdd, away: awayOdd)
+            let drawAwayOdd = calculateDrawAwayOdd(draw: drawOdd, away: awayOdd)
+            
+            // Crea quote Over/Under basate sulle reali
+            let baseOverUnder = (homeOdd + awayOdd) / 4
+            
+            let odds = Odds(
+                home: homeOdd,
+                draw: drawOdd,
+                away: awayOdd,
+                homeDraw: homeDrawOdd,
+                homeAway: homeAwayOdd,
+                drawAway: drawAwayOdd,
+                over05: baseOverUnder * 0.7,
+                under05: baseOverUnder * 1.8,
+                over15: baseOverUnder * 0.9,
+                under15: baseOverUnder * 1.2,
+                over25: baseOverUnder * 1.1,
+                under25: baseOverUnder * 0.9,
+                over35: baseOverUnder * 1.4,
+                under35: baseOverUnder * 0.7,
+                over45: baseOverUnder * 2.0,
+                under45: baseOverUnder * 0.5
+            )
+            
             let match = Match(
                 id: UUID(),
-                home: apiMatch.homeTeam.name,
-                away: apiMatch.awayTeam.name,
+                home: apiMatch.homeTeam,
+                away: apiMatch.awayTeam,
                 time: timeString,
                 odds: odds,
-                result: result,
-                goals: goals,
-                competition: apiMatch.competition.name,
-                status: apiMatch.status
+                result: nil, // Le partite future non hanno risultato
+                goals: nil,
+                competition: apiMatch.sportTitle,
+                status: "UPCOMING",
+                commenceTime: commenceTimeDate,
+                sportKey: apiMatch.sportKey,
+                bookmaker: selectedBookmaker
             )
             
             convertedMatches.append(match)
@@ -351,6 +430,18 @@ final class BettingViewModel: ObservableObject {
         // Salva le partite
         dailyMatches[todayKey] = convertedMatches
         saveMatches()
+    }
+    
+    private func calculateHomeDrawOdd(home: Double, draw: Double) -> Double {
+        return 1.0 / ((1.0/home) + (1.0/draw))
+    }
+    
+    private func calculateHomeAwayOdd(home: Double, away: Double) -> Double {
+        return 1.0 / ((1.0/home) + (1.0/away))
+    }
+    
+    private func calculateDrawAwayOdd(draw: Double, away: Double) -> Double {
+        return 1.0 / ((1.0/draw) + (1.0/away))
     }
     
     // MARK: - DATE HELPERS
@@ -630,6 +721,7 @@ final class BettingViewModel: ObservableObject {
 struct ContentView: View {
     
     @StateObject private var vm = BettingViewModel()
+    @State private var showAPISettings = false
     @Namespace private var animationNamespace
     
     var body: some View {
@@ -703,6 +795,9 @@ struct ContentView: View {
                 ) { stake in vm.confirmSlip(stake: stake) }
             }
             .sheet(item: $vm.showSlipDetail) { SlipDetailView(slip: $0) }
+            .sheet(isPresented: $showAPISettings) {
+                APISettingsView(vm: vm)
+            }
         }
     }
     
@@ -723,10 +818,16 @@ struct ContentView: View {
                 
                 // Toggle per API
                 if vm.selectedTab == 0 {
-                    HStack {
-                        Text("API")
-                            .font(.caption2)
-                            .foregroundColor(.gray)
+                    HStack(spacing: 8) {
+                        if vm.useRealMatches {
+                            Button {
+                                showAPISettings = true
+                            } label: {
+                                Image(systemName: "slider.horizontal.3")
+                                    .font(.caption)
+                                    .foregroundColor(.accentCyan)
+                            }
+                        }
                         
                         Toggle("", isOn: Binding(
                             get: { vm.useRealMatches },
@@ -735,6 +836,10 @@ struct ContentView: View {
                         .toggleStyle(SwitchToggleStyle(tint: .accentCyan))
                         .labelsHidden()
                         .scaleEffect(0.8)
+                        
+                        Text("LIVE")
+                            .font(.caption2)
+                            .foregroundColor(vm.useRealMatches ? .accentCyan : .gray)
                     }
                 }
             }
@@ -748,7 +853,7 @@ struct ContentView: View {
             ProgressView()
                 .scaleEffect(1.5)
                 .tint(.accentCyan)
-            Text("Caricamento partite in corso...")
+            Text("Caricamento quote in corso...")
                 .foregroundColor(.white)
             Spacer()
         }
@@ -771,7 +876,7 @@ struct ContentView: View {
                 .padding(.horizontal)
             
             Button("Riprova") {
-                vm.fetchTodaysRealMatches()
+                vm.fetchRealOdds()
             }
             .padding()
             .background(Color.accentCyan)
@@ -783,6 +888,18 @@ struct ContentView: View {
             }
             .padding()
             .foregroundColor(.gray)
+            
+            if !vm.hasAPIKey {
+                Button("Ottieni API Key") {
+                    if let url = URL(string: "https://the-odds-api.com/") {
+                        UIApplication.shared.open(url)
+                    }
+                }
+                .padding()
+                .background(Color.green)
+                .foregroundColor(.black)
+                .cornerRadius(12)
+            }
             
             Spacer()
         }
@@ -817,7 +934,10 @@ struct ContentView: View {
             // Info API
             if vm.useRealMatches {
                 if vm.hasAPIKey {
-                    Text("Partite reali da Football-Data.org")
+                    let sportName = vm.availableSports.first(where: { $0.0 == vm.selectedSport })?.1 ?? vm.selectedSport
+                    let bookmakerName = vm.availableBookmakers.first(where: { $0.0 == vm.selectedBookmaker })?.1 ?? vm.selectedBookmaker
+                    
+                    Text("\(sportName) • \(bookmakerName)")
                         .font(.caption)
                         .foregroundColor(.accentCyan)
                 } else {
@@ -866,6 +986,11 @@ struct ContentView: View {
         }
         .id(vm.selectedDayIndex)
         .transition(.opacity)
+        .refreshable {
+            if vm.useRealMatches && vm.hasAPIKey {
+                vm.fetchRealOdds()
+            }
+        }
     }
     
     private var emptyMatchesView: some View {
@@ -873,7 +998,7 @@ struct ContentView: View {
             Spacer()
                 .frame(height: 50)
             
-            Image(systemName: "soccerball")
+            Image(systemName: vm.selectedSport == "soccer" ? "soccerball" : "sportscourt")
                 .font(.system(size: 60))
                 .foregroundColor(.accentCyan)
             
@@ -881,15 +1006,16 @@ struct ContentView: View {
                 .font(.title2)
                 .foregroundColor(.white)
             
-            Text("Prova con le partite simulate o verifica la tua API key")
+            Text(vm.useRealMatches ? 
+                 "Prova a cambiare sport, regione o bookmaker" :
+                 "Prova con le partite reali o verifica la tua API key")
                 .foregroundColor(.gray)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal)
             
             if !vm.hasAPIKey && vm.useRealMatches {
-                Button("Configura API Key") {
-                    // Apri il sito per ottenere l'API key
-                    if let url = URL(string: "https://www.football-data.org/") {
+                Button("Ottieni API Key Gratuita") {
+                    if let url = URL(string: "https://the-odds-api.com/") {
                         UIApplication.shared.open(url)
                     }
                 }
@@ -907,41 +1033,65 @@ struct ContentView: View {
         NavigationLink(destination: MatchDetailView(match: match, vm: vm)) {
             VStack(spacing: 12) {
                 HStack {
-                    Text(match.home)
-                        .font(.headline)
-                        .foregroundColor(disabled ? .gray : .white)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(match.home)
+                            .font(.headline)
+                            .foregroundColor(disabled ? .gray : .white)
+                            .lineLimit(1)
+                        
+                        if let bookmaker = match.bookmaker {
+                            Text(bookmaker.uppercased())
+                                .font(.caption2)
+                                .foregroundColor(.accentCyan)
+                        }
+                    }
+                    
                     Spacer()
-                    Text(match.away)
-                        .font(.headline)
-                        .foregroundColor(disabled ? .gray : .white)
-                }
-                
-                if let competition = match.competition {
-                    HStack {
-                        Text(competition)
-                            .font(.caption)
-                            .foregroundColor(.accentCyan)
-                        Spacer()
-                        if let status = match.status {
-                            Text(status)
-                                .font(.caption)
-                                .foregroundColor(status == "FINISHED" ? .green : .orange)
+                    
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text(match.away)
+                            .font(.headline)
+                            .foregroundColor(disabled ? .gray : .white)
+                            .lineLimit(1)
+                        
+                        if let competition = match.competition {
+                            Text(competition)
+                                .font(.caption2)
+                                .foregroundColor(.accentCyan)
                         }
                     }
                 }
                 
                 HStack {
-                    Text("1: \(String(format: "%.2f", match.odds.home))")
-                        .font(.caption)
-                        .foregroundColor(.gray)
-                    Spacer()
-                    Text("X: \(String(format: "%.2f", match.odds.draw))")
-                        .font(.caption)
-                        .foregroundColor(.gray)
-                    Spacer()
-                    Text("2: \(String(format: "%.2f", match.odds.away))")
-                        .font(.caption)
-                        .foregroundColor(.gray)
+                    VStack(spacing: 2) {
+                        Text("1")
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                        Text("\(match.odds.home, specifier: "%.2f")")
+                            .font(.system(.body, design: .monospaced))
+                            .foregroundColor(.white)
+                    }
+                    .frame(maxWidth: .infinity)
+                    
+                    VStack(spacing: 2) {
+                        Text("X")
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                        Text("\(match.odds.draw, specifier: "%.2f")")
+                            .font(.system(.body, design: .monospaced))
+                            .foregroundColor(.white)
+                    }
+                    .frame(maxWidth: .infinity)
+                    
+                    VStack(spacing: 2) {
+                        Text("2")
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                        Text("\(match.odds.away, specifier: "%.2f")")
+                            .font(.system(.body, design: .monospaced))
+                            .foregroundColor(.white)
+                    }
+                    .frame(maxWidth: .infinity)
                 }
             }
             .padding()
@@ -1053,6 +1203,167 @@ struct ContentView: View {
                         .frame(width: 22, height: 4)
                 }
             }
+        }
+    }
+}
+
+// MARK: - API SETTINGS VIEW
+
+struct APISettingsView: View {
+    @ObservedObject var vm: BettingViewModel
+    @Environment(\.presentationMode) var presentationMode
+    
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+            
+            VStack(spacing: 20) {
+                Capsule()
+                    .fill(Color.gray)
+                    .frame(width: 40, height: 5)
+                    .padding(.top, 8)
+                
+                Text("Impostazioni API")
+                    .font(.title2.bold())
+                    .foregroundColor(.accentCyan)
+                
+                ScrollView {
+                    VStack(spacing: 20) {
+                        // Selezione Sport
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Sport")
+                                .font(.headline)
+                                .foregroundColor(.white)
+                            
+                            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+                                ForEach(vm.availableSports, id: \.0) { sport in
+                                    Button {
+                                        vm.changeSport(to: sport.0)
+                                    } label: {
+                                        Text(sport.1)
+                                            .font(.subheadline)
+                                            .padding(.vertical, 10)
+                                            .frame(maxWidth: .infinity)
+                                            .background(
+                                                RoundedRectangle(cornerRadius: 10)
+                                                    .fill(vm.selectedSport == sport.0 ? Color.accentCyan : Color.white.opacity(0.08))
+                                            )
+                                            .foregroundColor(vm.selectedSport == sport.0 ? .black : .white)
+                                    }
+                                }
+                            }
+                        }
+                        
+                        // Selezione Regione
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Regione")
+                                .font(.headline)
+                                .foregroundColor(.white)
+                            
+                            HStack(spacing: 10) {
+                                ForEach(vm.availableRegions, id: \.0) { region in
+                                    Button {
+                                        vm.changeRegion(to: region.0)
+                                    } label: {
+                                        Text(region.1)
+                                            .font(.subheadline)
+                                            .padding(.horizontal, 12)
+                                            .padding(.vertical, 8)
+                                            .background(
+                                                RoundedRectangle(cornerRadius: 8)
+                                                    .fill(vm.selectedRegion == region.0 ? Color.accentCyan : Color.white.opacity(0.08))
+                                            )
+                                            .foregroundColor(vm.selectedRegion == region.0 ? .black : .white)
+                                    }
+                                }
+                            }
+                        }
+                        
+                        // Selezione Bookmaker
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Bookmaker")
+                                .font(.headline)
+                                .foregroundColor(.white)
+                            
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 10) {
+                                    ForEach(vm.availableBookmakers, id: \.0) { bookmaker in
+                                        Button {
+                                            vm.changeBookmaker(to: bookmaker.0)
+                                        } label: {
+                                            Text(bookmaker.1)
+                                                .font(.subheadline)
+                                                .padding(.horizontal, 16)
+                                                .padding(.vertical, 8)
+                                                .background(
+                                                    RoundedRectangle(cornerRadius: 10)
+                                                        .fill(vm.selectedBookmaker == bookmaker.0 ? Color.accentCyan : Color.white.opacity(0.08))
+                                                )
+                                                .foregroundColor(vm.selectedBookmaker == bookmaker.0 ? .black : .white)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        
+                        // Info API Key
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("API Key Status")
+                                .font(.headline)
+                                .foregroundColor(.white)
+                            
+                            HStack {
+                                Circle()
+                                    .fill(vm.hasAPIKey ? Color.green : Color.red)
+                                    .frame(width: 10, height: 10)
+                                
+                                Text(vm.hasAPIKey ? "Configurata" : "Mancante")
+                                    .foregroundColor(vm.hasAPIKey ? .green : .red)
+                                
+                                Spacer()
+                                
+                                if !vm.hasAPIKey {
+                                    Button("Ottieni API Key") {
+                                        if let url = URL(string: "https://the-odds-api.com/") {
+                                            UIApplication.shared.open(url)
+                                        }
+                                    }
+                                    .font(.caption)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 6)
+                                    .background(Color.accentCyan)
+                                    .foregroundColor(.black)
+                                    .cornerRadius(8)
+                                }
+                            }
+                            .padding()
+                            .background(Color.white.opacity(0.06))
+                            .cornerRadius(12)
+                            
+                            Text("Registrati su the-odds-api.com per ottenere una API key gratuita (500 richieste/mese)")
+                                .font(.caption)
+                                .foregroundColor(.gray)
+                        }
+                    }
+                    .padding()
+                }
+                
+                Button {
+                    presentationMode.wrappedValue.dismiss()
+                } label: {
+                    Text("Chiudi")
+                        .bold()
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.accentCyan)
+                        .foregroundColor(.black)
+                        .cornerRadius(16)
+                }
+                .padding(.horizontal)
+                
+                Spacer()
+            }
+            .padding()
         }
     }
 }
