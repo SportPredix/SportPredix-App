@@ -443,7 +443,7 @@ final class BettingViewModel: ObservableObject {
         // Normalizza le probabilità
         let normHomeProb = homeProb / totalProb
         let normDrawProb = drawProb / totalProb
-        let normAwayProb = awayProb / totalProb
+        _ = awayProb / totalProb // Non usato ma calcolato per completezza
         
         // Genera risultato casuale ma realistico
         let random = Double.random(in: 0...1)
@@ -471,9 +471,7 @@ final class BettingViewModel: ObservableObject {
         let homeAway = 1.0 / ((1.0/home) + (1.0/away))
         let drawAway = 1.0 / ((1.0/draw) + (1.0/away))
         
-        // Quote Over/Under realistiche basate sulle quote 1X2
-        let avgOdd = (home + draw + away) / 3.0
-        
+        // Quote Over/Under realistiche (valori fissi realistici)
         return Odds(
             home: home,
             draw: draw,
@@ -495,8 +493,8 @@ final class BettingViewModel: ObservableObject {
     }
     
     private func teamLogoURL(for team: String) -> String {
-        // URL di logo da API pubblica
-        let cleanName = team.lowercased()
+        // URL di logo
+        _ = team.lowercased()
             .replacingOccurrences(of: " ", with: "_")
             .replacingOccurrences(of: ".", with: "")
             .replacingOccurrences(of: "'", with: "")
@@ -777,60 +775,31 @@ struct ContentView: View {
                 
                 VStack(spacing: 0) {
                     
-                    header
+                    headerView
                     
                     if vm.selectedTab == 0 {
-                        calendarBar
+                        calendarBarView
                         
                         if vm.isLoading {
                             loadingView
                         } else if let error = vm.apiError {
                             errorView(error: error)
                         } else {
-                            matchList
+                            matchListView
                         }
                     } else if vm.selectedTab == 1 {
                         GamesView()
                     } else if vm.selectedTab == 2 {
-                        placedBets
-                            .onAppear { vm.evaluateAllSlips() }
+                        placedBetsView
                     } else {
                         ProfileView()
                             .environmentObject(vm)
                     }
                     
-                    bottomBar
+                    bottomBarView
                 }
                 
-                // FLOATING BUTTON PER LE SCHEDINE
-                if !vm.currentPicks.isEmpty && vm.selectedTab != 3 {
-                    VStack {
-                        Spacer()
-                        HStack {
-                            Spacer()
-                            ZStack(alignment: .topTrailing) {
-                                Button { vm.showSheet = true } label: {
-                                    Image(systemName: "rectangle.stack.fill")
-                                        .foregroundColor(.black)
-                                        .padding(16)
-                                        .background(Color.accentCyan)
-                                        .clipShape(Circle())
-                                        .shadow(radius: 10)
-                                }
-                                
-                                Text("\(vm.currentPicks.count)")
-                                    .font(.caption2.bold())
-                                    .padding(4)
-                                    .background(Color.red)
-                                    .clipShape(Circle())
-                                    .foregroundColor(.white)
-                                    .offset(x: 8, y: -8)
-                            }
-                            .padding(.trailing, 20)
-                            .padding(.bottom, 20)
-                        }
-                    }
-                }
+                floatingButtonView
             }
             .sheet(isPresented: $vm.showSheet) {
                 BetSheet(
@@ -843,7 +812,9 @@ struct ContentView: View {
         }
     }
     
-    private var header: some View {
+    // MARK: - HEADER
+    
+    private var headerView: some View {
         HStack {
             Text(vm.selectedTab == 0 ? "Calendario" :
                     vm.selectedTab == 1 ? "Giochi" :
@@ -888,6 +859,8 @@ struct ContentView: View {
         .padding()
     }
     
+    // MARK: - LOADING VIEW
+    
     private var loadingView: some View {
         VStack(spacing: 20) {
             Spacer()
@@ -907,6 +880,8 @@ struct ContentView: View {
             Spacer()
         }
     }
+    
+    // MARK: - ERROR VIEW
     
     private func errorView(error: String) -> some View {
         VStack(spacing: 20) {
@@ -949,7 +924,7 @@ struct ContentView: View {
     
     // MARK: CALENDAR BAR
     
-    private var calendarBar: some View {
+    private var calendarBarView: some View {
         VStack(spacing: 12) {
             HStack(spacing: 16) {
                 ForEach(0..<3) { index in
@@ -1009,7 +984,7 @@ struct ContentView: View {
     
     // MARK: MATCH LIST
     
-    private var matchList: some View {
+    private var matchListView: some View {
         let groupedMatches = vm.matchesForSelectedDay()
         let isYesterday = vm.selectedDayIndex == 0
         
@@ -1035,7 +1010,7 @@ struct ContentView: View {
                             .padding(.horizontal, 4)
                             
                             ForEach(groupedMatches[time]!) { match in
-                                matchCard(match, disabled: isYesterday)
+                                matchCardView(match: match, disabled: isYesterday)
                             }
                         }
                     }
@@ -1088,119 +1063,125 @@ struct ContentView: View {
         }
     }
     
-    private func matchCard(_ match: Match, disabled: Bool) -> some View {
-        NavigationLink(destination: MatchDetailView(match: match, vm: vm)) {
-            VStack(spacing: 12) {
-                HStack {
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack(spacing: 8) {
-                            if match.isReal {
-                                Circle()
-                                    .fill(Color.green)
-                                    .frame(width: 8, height: 8)
-                            }
-                            
-                            Text(match.home)
-                                .font(.headline)
-                                .foregroundColor(disabled ? .gray : .white)
-                                .lineLimit(1)
+    private func matchCardView(match: Match, disabled: Bool) -> some View {
+        Button(action: {
+            // Gestione del tap
+        }) {
+            matchCardContent(match: match, disabled: disabled)
+        }
+        .buttonStyle(PlainButtonStyle())
+    }
+    
+    private func matchCardContent(match: Match, disabled: Bool) -> some View {
+        VStack(spacing: 12) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 8) {
+                        if match.isReal {
+                            Circle()
+                                .fill(Color.green)
+                                .frame(width: 8, height: 8)
                         }
                         
-                        Text(match.competition)
-                            .font(.caption2)
-                            .foregroundColor(.accentCyan)
+                        Text(match.home)
+                            .font(.headline)
+                            .foregroundColor(disabled ? .gray : .white)
+                            .lineLimit(1)
                     }
                     
-                    Spacer()
-                    
-                    VStack(alignment: .trailing, spacing: 4) {
-                        HStack(spacing: 8) {
-                            Text(match.away)
-                                .font(.headline)
-                                .foregroundColor(disabled ? .gray : .white)
-                                .lineLimit(1)
-                            
-                            if match.isReal {
-                                Circle()
-                                    .fill(Color.green)
-                                    .frame(width: 8, height: 8)
-                            }
-                        }
-                        
-                        Text(match.status)
-                            .font(.caption2)
-                            .foregroundColor(match.status == "FINISHED" ? .green : .orange)
-                    }
+                    Text(match.competition)
+                        .font(.caption2)
+                        .foregroundColor(.accentCyan)
                 }
                 
-                // Quote principali
-                HStack(spacing: 0) {
-                    VStack(spacing: 4) {
-                        Text("1")
-                            .font(.caption)
-                            .foregroundColor(.gray)
-                        Text("\(match.odds.home, specifier: "%.2f")")
-                            .font(.system(.body, design: .monospaced).bold())
-                            .foregroundColor(match.isReal ? .green : .white)
+                Spacer()
+                
+                VStack(alignment: .trailing, spacing: 4) {
+                    HStack(spacing: 8) {
+                        Text(match.away)
+                            .font(.headline)
+                            .foregroundColor(disabled ? .gray : .white)
+                            .lineLimit(1)
+                        
+                        if match.isReal {
+                            Circle()
+                                .fill(Color.green)
+                                .frame(width: 8, height: 8)
+                        }
                     }
-                    .frame(maxWidth: .infinity)
                     
-                    Divider()
-                        .frame(height: 30)
-                        .background(Color.gray.opacity(0.3))
-                    
-                    VStack(spacing: 4) {
-                        Text("X")
-                            .font(.caption)
-                            .foregroundColor(.gray)
-                        Text("\(match.odds.draw, specifier: "%.2f")")
-                            .font(.system(.body, design: .monospaced).bold())
-                            .foregroundColor(match.isReal ? .green : .white)
-                    }
-                    .frame(maxWidth: .infinity)
-                    
-                    Divider()
-                        .frame(height: 30)
-                        .background(Color.gray.opacity(0.3))
-                    
-                    VStack(spacing: 4) {
-                        Text("2")
-                            .font(.caption)
-                            .foregroundColor(.gray)
-                        Text("\(match.odds.away, specifier: "%.2f")")
-                            .font(.system(.body, design: .monospaced).bold())
-                            .foregroundColor(match.isReal ? .green : .white)
-                    }
-                    .frame(maxWidth: .infinity)
+                    Text(match.status)
+                        .font(.caption2)
+                        .foregroundColor(match.status == "FINISHED" ? .green : .orange)
                 }
-                .padding(.horizontal, 10)
             }
-            .padding()
-            .background(
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(disabled ? Color.gray.opacity(0.1) : Color.white.opacity(0.06))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 16)
-                            .stroke(
-                                disabled ? Color.gray.opacity(0.2) : 
-                                (match.isReal ? Color.green.opacity(0.4) : Color.white.opacity(0.1)),
-                                lineWidth: match.isReal ? 2 : 1
-                            )
-                    )
-            )
-            .overlay(
-                match.isReal ?
-                RoundedRectangle(cornerRadius: 16)
-                    .stroke(Color.green.opacity(0.2), lineWidth: 1)
-                    .blur(radius: 2) : nil
-            )
+            
+            // Quote principali
+            HStack(spacing: 0) {
+                VStack(spacing: 4) {
+                    Text("1")
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                    Text("\(match.odds.home, specifier: "%.2f")")
+                        .font(.system(.body, design: .monospaced).bold())
+                        .foregroundColor(match.isReal ? .green : .white)
+                }
+                .frame(maxWidth: .infinity)
+                
+                Divider()
+                    .frame(height: 30)
+                    .background(Color.gray.opacity(0.3))
+                
+                VStack(spacing: 4) {
+                    Text("X")
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                    Text("\(match.odds.draw, specifier: "%.2f")")
+                        .font(.system(.body, design: .monospaced).bold())
+                        .foregroundColor(match.isReal ? .green : .white)
+                }
+                .frame(maxWidth: .infinity)
+                
+                Divider()
+                    .frame(height: 30)
+                    .background(Color.gray.opacity(0.3))
+                
+                VStack(spacing: 4) {
+                    Text("2")
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                    Text("\(match.odds.away, specifier: "%.2f")")
+                        .font(.system(.body, design: .monospaced).bold())
+                        .foregroundColor(match.isReal ? .green : .white)
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .padding(.horizontal, 10)
         }
-        .disabled(disabled)
+        .padding()
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(disabled ? Color.gray.opacity(0.1) : Color.white.opacity(0.06))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16)
+                        .stroke(
+                            disabled ? Color.gray.opacity(0.2) : 
+                            (match.isReal ? Color.green.opacity(0.4) : Color.white.opacity(0.1)),
+                            lineWidth: match.isReal ? 2 : 1
+                        )
+                )
+        )
+        .overlay(
+            match.isReal ?
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(Color.green.opacity(0.2), lineWidth: 1)
+                .blur(radius: 2) : nil
+        )
     }
     
     // MARK: PLACED BETS
     
-    private var placedBets: some View {
+    private var placedBetsView: some View {
         ScrollView {
             VStack(spacing: 12) {
                 if vm.slips.isEmpty {
@@ -1235,11 +1216,47 @@ struct ContentView: View {
             }
             .padding()
         }
+        .onAppear { vm.evaluateAllSlips() }
+    }
+    
+    // MARK: - FLOATING BUTTON
+    
+    private var floatingButtonView: some View {
+        Group {
+            if !vm.currentPicks.isEmpty && vm.selectedTab != 3 {
+                VStack {
+                    Spacer()
+                    HStack {
+                        Spacer()
+                        ZStack(alignment: .topTrailing) {
+                            Button { vm.showSheet = true } label: {
+                                Image(systemName: "rectangle.stack.fill")
+                                    .foregroundColor(.black)
+                                    .padding(16)
+                                    .background(Color.accentCyan)
+                                    .clipShape(Circle())
+                                    .shadow(radius: 10)
+                            }
+                            
+                            Text("\(vm.currentPicks.count)")
+                                .font(.caption2.bold())
+                                .padding(4)
+                                .background(Color.red)
+                                .clipShape(Circle())
+                                .foregroundColor(.white)
+                                .offset(x: 8, y: -8)
+                        }
+                        .padding(.trailing, 20)
+                        .padding(.bottom, 20)
+                    }
+                }
+            }
+        }
     }
     
     // MARK: - BOTTOM BAR
     
-    private var bottomBar: some View {
+    private var bottomBarView: some View {
         ZStack {
             Rectangle()
                 .fill(.ultraThinMaterial)
@@ -1249,19 +1266,17 @@ struct ContentView: View {
                 .shadow(color: .black.opacity(0.25), radius: 10, y: -2)
             
             HStack(spacing: 50) {
-                bottomItem(icon: "calendar", index: 0)
-                bottomItem(icon: "dice.fill", index: 1)
-                bottomItem(icon: "list.bullet", index: 2)
-                bottomItem(icon: "person.crop.circle", index: 3)
+                bottomItemView(icon: "calendar", index: 0)
+                bottomItemView(icon: "dice.fill", index: 1)
+                bottomItemView(icon: "list.bullet", index: 2)
+                bottomItemView(icon: "person.crop.circle", index: 3)
             }
         }
         .padding(.bottom, 8)
     }
     
-    private func bottomItem(icon: String, index: Int) -> some View {
-        let isSelected = vm.selectedTab == index
-        
-        return Button {
+    private func bottomItemView(icon: String, index: Int) -> some View {
+        Button {
             withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
                 vm.selectedTab = index
             }
@@ -1269,7 +1284,7 @@ struct ContentView: View {
             VStack(spacing: 6) {
                 
                 ZStack {
-                    if isSelected {
+                    if vm.selectedTab == index {
                         Circle()
                             .fill(Color.accentCyan.opacity(0.25))
                             .frame(width: 44, height: 44)
@@ -1278,12 +1293,12 @@ struct ContentView: View {
                     
                     Image(systemName: icon)
                         .font(.system(size: 20, weight: .semibold))
-                        .foregroundColor(isSelected ? .accentCyan : .white.opacity(0.7))
-                        .scaleEffect(isSelected ? 1.15 : 1.0)
-                        .animation(.spring(response: 0.3, dampingFraction: 0.6), value: isSelected)
+                        .foregroundColor(vm.selectedTab == index ? .accentCyan : .white.opacity(0.7))
+                        .scaleEffect(vm.selectedTab == index ? 1.15 : 1.0)
+                        .animation(.spring(response: 0.3, dampingFraction: 0.6), value: vm.selectedTab)
                 }
                 
-                if isSelected {
+                if vm.selectedTab == index {
                     Capsule()
                         .fill(Color.accentCyan)
                         .frame(width: 22, height: 4)
