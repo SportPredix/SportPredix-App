@@ -7,10 +7,6 @@
 
 import SwiftUI
 
-extension Color {
-    static let accentCyan = Color(red: 68/255, green: 224/255, blue: 203/255)
-}
-
 struct PreferencesView: View {
     @Environment(\.presentationMode) var presentationMode
     @EnvironmentObject var vm: BettingViewModel

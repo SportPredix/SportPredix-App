@@ -7,10 +7,6 @@
 
 import SwiftUI
 
-extension Color {
-    static let accentCyan = Color(red: 68/255, green: 224/255, blue: 203/255)
-}
-
 struct GamesView: View {
     let games = [
         ("Gratta e Vinci", "square.grid.3x3.fill"),
