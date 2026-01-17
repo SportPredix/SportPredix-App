@@ -64,6 +64,13 @@ struct GameButton: View {
                     .font(.headline)
                     .foregroundColor(.white)
                     .multilineTextAlignment(.center)
+                
+                if title == "Gratta e Vinci" {
+                    Text("€50")
+                        .font(.caption)
+                        .foregroundColor(.yellow)
+                        .padding(.top, 2)
+                }
             }
             .frame(width: 160, height: 160)
             .background(Color.white.opacity(0.08))
@@ -75,38 +82,43 @@ struct GameButton: View {
         }
         .sheet(isPresented: $showGame) {
             if title == "Gratta e Vinci" {
-                ScratchCardView(balance: $vm.balance)
+                ScratchCardView(balance: $vm.balance, isPresented: $showGame)
             } else {
-                ComingSoonView()
+                ComingSoonView(isPresented: $showGame)
             }
         }
     }
 }
 
 struct ScratchCardView: View {
-    @Environment(\.presentationMode) var presentationMode
     @Binding var balance: Double
+    @Binding var isPresented: Bool
     
     @State private var scratchedPoints: [CGPoint] = []
     @State private var isScratched = false
     @State private var prize: Int = 0
-    @State private var showPrize = false
     @State private var opacity: Double = 1.0
     @State private var showResult = false
-    @State private var scratchesNeeded = 50
+    @State private var scratchesNeeded = 40
     @State private var currentScratches = 0
+    @State private var isPlaying = true
+    @State private var showCantPlayAlert = false
     
-    let prizes = [0, 0, 0, 50, 0, 100, 0, 0, 250, 0, 500, 1000, 0, 0, 0, 0, 500, 0, 50, 0, 100, 0, 250, 0, 0, 0, 100, 0, 500, 0, 1000, 0, 50, 0, 0, 250]
+    // Premi migliori - meno "0"
+    let prizes = [50, 100, 0, 250, 50, 100, 0, 500, 1000, 50, 0, 250, 100, 0, 500, 50, 1000, 250, 100, 50]
+    
+    // Costo fisso del biglietto
+    let ticketPrice = 50.0
     
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
             
             VStack(spacing: 20) {
-                // Header
+                // Header con saldo e costo
                 HStack {
                     Button {
-                        presentationMode.wrappedValue.dismiss()
+                        isPresented = false
                     } label: {
                         Image(systemName: "xmark")
                             .foregroundColor(.accentCyan)
@@ -115,188 +127,327 @@ struct ScratchCardView: View {
                     
                     Spacer()
                     
-                    Text("Gratta e Vinci")
-                        .font(.title2.bold())
-                        .foregroundColor(.white)
+                    VStack(spacing: 4) {
+                        Text("Gratta e Vinci")
+                            .font(.title2.bold())
+                            .foregroundColor(.white)
+                        
+                        Text("Costo: €\(Int(ticketPrice))")
+                            .font(.caption)
+                            .foregroundColor(.yellow)
+                    }
                     
                     Spacer()
                     
-                    // Spazio per bilanciare
-                    Color.clear.frame(width: 24, height: 24)
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text("Saldo")
+                            .font(.caption2)
+                            .foregroundColor(.gray)
+                        Text("€\(balance, specifier: "%.0f")")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundColor(.accentCyan)
+                    }
                 }
                 .padding(.horizontal)
                 .padding(.top)
                 
-                if !showResult {
-                    // Instructions
-                    VStack(spacing: 8) {
-                        Text("Gratta l'area grigia per scoprire il premio!")
-                            .font(.headline)
-                            .foregroundColor(.accentCyan)
-                        
-                        Text("Premi: €0, €50, €100, €250, €500, €1000")
-                            .font(.caption)
-                            .foregroundColor(.gray)
-                        
-                        Text("Gratta \(currentScratches)/\(scratchesNeeded) per rivelare")
-                            .font(.caption)
-                            .foregroundColor(.accentCyan)
-                            .padding(.top, 4)
-                    }
-                    .padding(.horizontal)
-                    
-                    // Scratch Card Area
-                    ZStack {
-                        // Hidden prize (sotto)
-                        RoundedRectangle(cornerRadius: 20)
-                            .fill(Color.accentCyan.opacity(0.3))
-                            .frame(width: 300, height: 300)
-                            .overlay(
-                                VStack {
-                                    if prize > 0 {
-                                        Text("€\(prize)")
-                                            .font(.system(size: 48, weight: .bold))
-                                            .foregroundColor(.black)
-                                        Text("HAI VINTO!")
-                                            .font(.title2.bold())
-                                            .foregroundColor(.black)
-                                    } else {
-                                        Text("Nessun Premio")
-                                            .font(.system(size: 32, weight: .bold))
-                                            .foregroundColor(.black)
-                                        Text("Ritenta!")
-                                            .font(.title2)
-                                            .foregroundColor(.black)
-                                    }
-                                }
-                            )
-                        
-                        // Scratchable layer (sopra)
-                        RoundedRectangle(cornerRadius: 20)
-                            .fill(Color.gray)
-                            .frame(width: 300, height: 300)
-                            .overlay(
-                                ZStack {
-                                    LinearGradient(
-                                        gradient: Gradient(colors: [.gray.opacity(0.8), .gray.opacity(0.6)]),
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    )
-                                    
-                                    Image(systemName: "hand.tap.fill")
-                                        .font(.system(size: 40))
-                                        .foregroundColor(.white.opacity(0.3))
-                                    
-                                    Text("Gratta qui!")
-                                        .font(.headline)
-                                        .foregroundColor(.white.opacity(0.5))
-                                        .padding(.top, 80)
-                                }
-                            )
-                            .opacity(opacity)
-                            .gesture(
-                                DragGesture(minimumDistance: 0)
-                                    .onChanged { value in
-                                        if !isScratched && opacity > 0 {
-                                            let newPoint = value.location
-                                            scratchedPoints.append(newPoint)
-                                            currentScratches += 1
-                                            
-                                            // Diminuisci opacità quando gratti
-                                            opacity = max(0.0, opacity - 0.015)
-                                            
-                                            // Se grattato abbastanza, rivela
-                                            if currentScratches >= scratchesNeeded {
-                                                revealPrize()
-                                            }
-                                        }
-                                    }
-                            )
-                    }
-                    .clipShape(RoundedRectangle(cornerRadius: 20))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 20)
-                            .stroke(Color.accentCyan.opacity(0.3), lineWidth: 3)
-                    )
-                    
-                    // Action buttons
-                    HStack(spacing: 20) {
-                        Button("Reset") {
-                            resetScratchCard()
-                        }
-                        .padding()
-                        .background(Color.red.opacity(0.3))
-                        .foregroundColor(.white)
-                        .cornerRadius(12)
-                        
-                        Button("Rivela Ora") {
-                            revealPrize()
-                        }
-                        .padding()
-                        .background(Color.accentCyan)
-                        .foregroundColor(.black)
-                        .cornerRadius(12)
-                        .disabled(isScratched)
-                    }
-                    .padding(.top, 20)
-                    
-                    Spacer()
-                } else {
-                    // Result Screen
-                    VStack(spacing: 25) {
-                        Image(systemName: prize > 0 ? "gift.fill" : "xmark.circle.fill")
-                            .font(.system(size: 80))
-                            .foregroundColor(prize > 0 ? .accentCyan : .red)
-                        
-                        Text(prize > 0 ? "COMPLIMENTI!" : "MI DISPIACE")
-                            .font(.largeTitle.bold())
-                            .foregroundColor(prize > 0 ? .accentCyan : .white)
-                        
-                        Text(prize > 0 ? "€\(prize)" : "Ritenta, sarai più fortunato!")
-                            .font(.system(size: 48, weight: .bold))
-                            .foregroundColor(prize > 0 ? .yellow : .gray)
-                        
-                        if prize > 0 {
-                            Text("+ €\(prize) aggiunti al tuo saldo")
-                                .font(.body)
-                                .foregroundColor(.green)
-                                .padding(.top, 5)
-                        }
-                        
-                        Button {
-                            presentationMode.wrappedValue.dismiss()
-                        } label: {
-                            Text(prize > 0 ? "Gioca Ancora" : "Riprova")
-                                .font(.headline)
-                                .foregroundColor(.black)
-                                .frame(maxWidth: .infinity)
-                                .padding()
-                                .background(Color.accentCyan)
-                                .cornerRadius(16)
-                        }
-                        .padding(.top, 20)
-                        
-                        Button {
-                            presentationMode.wrappedValue.dismiss()
-                        } label: {
-                            Text("Torna ai Giochi")
-                                .font(.headline)
-                                .foregroundColor(.accentCyan)
-                                .padding(.top, 10)
-                        }
-                    }
-                    .padding(30)
-                    .background(Color.white.opacity(0.08))
-                    .cornerRadius(25)
-                    .padding(.horizontal, 20)
+                if !showResult && isPlaying {
+                    // Schermata di gioco
+                    gameView
+                } else if showResult {
+                    // Schermata risultato
+                    resultView
                 }
+                
+                Spacer()
             }
             .padding()
         }
         .onAppear {
-            // Seleziona premio casuale all'avvio
-            prize = prizes.randomElement() ?? 0
+            // Controlla se può pagare il biglietto
+            if balance >= ticketPrice {
+                startNewGame()
+            } else {
+                showCantPlayAlert = true
+            }
         }
+        .alert("Saldo insufficiente", isPresented: $showCantPlayAlert) {
+            Button("OK") {
+                isPresented = false
+            }
+        } message: {
+            Text("Ti servono €\(Int(ticketPrice)) per giocare a Gratta e Vinci.\nIl tuo saldo è €\(balance, specifier: "%.0f")")
+        }
+    }
+    
+    private var gameView: some View {
+        VStack(spacing: 25) {
+            // Instructions
+            VStack(spacing: 8) {
+                Text("Gratta per scoprire il premio!")
+                    .font(.headline)
+                    .foregroundColor(.accentCyan)
+                
+                Text("Premi: €50, €100, €250, €500, €1000")
+                    .font(.caption)
+                    .foregroundColor(.gray)
+                    .multilineTextAlignment(.center)
+                
+                Text("Gratta \(currentScratches)/\(scratchesNeeded) per rivelare")
+                    .font(.caption)
+                    .foregroundColor(currentScratches >= scratchesNeeded ? .green : .accentCyan)
+                    .padding(.top, 4)
+            }
+            .padding(.horizontal)
+            
+            // Scratch Card Area
+            ZStack {
+                // Premio nascosto (sotto)
+                RoundedRectangle(cornerRadius: 20)
+                    .fill(
+                        LinearGradient(
+                            gradient: Gradient(colors: 
+                                prize > 0 ? 
+                                [Color.yellow.opacity(0.4), Color.orange.opacity(0.6)] :
+                                [Color.gray.opacity(0.3), Color.gray.opacity(0.5)]
+                            ),
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .frame(width: 300, height: 300)
+                    .overlay(
+                        VStack(spacing: 15) {
+                            if prize > 0 {
+                                Image(systemName: "trophy.fill")
+                                    .font(.system(size: 60))
+                                    .foregroundColor(.yellow)
+                                    .shadow(color: .yellow, radius: 10)
+                                
+                                Text("€\(prize)")
+                                    .font(.system(size: 52, weight: .bold))
+                                    .foregroundColor(.black)
+                                    .shadow(color: .white, radius: 2)
+                                
+                                Text("HAI VINTO!")
+                                    .font(.title2.bold())
+                                    .foregroundColor(.black)
+                            } else {
+                                Image(systemName: "arrow.triangle.2.circlepath")
+                                    .font(.system(size: 60))
+                                    .foregroundColor(.gray)
+                                
+                                Text("RITENTA")
+                                    .font(.system(size: 38, weight: .bold))
+                                    .foregroundColor(.black)
+                                
+                                Text("La prossima volta\nsarai più fortunato!")
+                                    .font(.caption)
+                                    .foregroundColor(.black.opacity(0.7))
+                                    .multilineTextAlignment(.center)
+                            }
+                        }
+                    )
+                
+                // Layer grattabile (sopra)
+                RoundedRectangle(cornerRadius: 20)
+                    .fill(Color.gray)
+                    .frame(width: 300, height: 300)
+                    .overlay(
+                        ZStack {
+                            // Texture scratch
+                            LinearGradient(
+                                gradient: Gradient(colors: [.gray.opacity(0.9), .gray.opacity(0.7)]),
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                            
+                            // Pattern di gratta
+                            Image(systemName: "scissors")
+                                .font(.system(size: 40))
+                                .foregroundColor(.white.opacity(0.2))
+                                .rotationEffect(.degrees(45))
+                            
+                            VStack(spacing: 10) {
+                                Image(systemName: "hand.tap.fill")
+                                    .font(.system(size: 50))
+                                    .foregroundColor(.white.opacity(0.4))
+                                
+                                Text("GRATTA QUI")
+                                    .font(.headline)
+                                    .foregroundColor(.white.opacity(0.6))
+                                    .padding(.top, 20)
+                            }
+                        }
+                    )
+                    .opacity(opacity)
+                    .gesture(
+                        DragGesture(minimumDistance: 0)
+                            .onChanged { value in
+                                if !isScratched && opacity > 0 {
+                                    let newPoint = value.location
+                                    scratchedPoints.append(newPoint)
+                                    currentScratches += 1
+                                    
+                                    // Diminuisci opacità quando gratti
+                                    opacity = max(0.0, opacity - 0.02)
+                                    
+                                    // Se grattato abbastanza, rivela
+                                    if currentScratches >= scratchesNeeded {
+                                        revealPrize()
+                                    }
+                                }
+                            }
+                    )
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 20))
+            .overlay(
+                RoundedRectangle(cornerRadius: 20)
+                    .stroke(Color.accentCyan.opacity(0.4), lineWidth: 3)
+            )
+            
+            // Pulsanti azione
+            HStack(spacing: 20) {
+                Button {
+                    resetScratchCard()
+                } label: {
+                    HStack {
+                        Image(systemName: "arrow.counterclockwise")
+                        Text("Ricomincia")
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 12)
+                    .background(Color.red.opacity(0.3))
+                    .foregroundColor(.white)
+                    .cornerRadius(12)
+                }
+                
+                Button {
+                    revealPrize()
+                } label: {
+                    HStack {
+                        Image(systemName: "eye.fill")
+                        Text("Rivela")
+                    }
+                    .padding(.horizontal, 30)
+                    .padding(.vertical, 12)
+                    .background(Color.accentCyan)
+                    .foregroundColor(.black)
+                    .cornerRadius(12)
+                }
+                .disabled(isScratched)
+            }
+            .padding(.top, 10)
+        }
+    }
+    
+    private var resultView: some View {
+        VStack(spacing: 30) {
+            // Icona risultato
+            Image(systemName: prize > 0 ? "trophy.fill" : "hourglass")
+                .font(.system(size: 80))
+                .foregroundColor(prize > 0 ? .yellow : .gray)
+                .scaleEffect(1.2)
+            
+            // Titolo risultato
+            Text(prize > 0 ? "COMPLIMENTI!" : "PECCATO...")
+                .font(.largeTitle.bold())
+                .foregroundColor(prize > 0 ? .accentCyan : .white)
+            
+            // Importo
+            Text(prize > 0 ? "+ €\(prize)" : "€0")
+                .font(.system(size: 56, weight: .heavy))
+                .foregroundColor(prize > 0 ? .yellow : .gray)
+                .padding(.vertical, 10)
+            
+            // Messaggio
+            VStack(spacing: 8) {
+                if prize > 0 {
+                    Text("Hai vinto €\(prize)!")
+                        .font(.title3)
+                        .foregroundColor(.green)
+                    
+                    Text("Il premio è stato aggiunto al tuo saldo")
+                        .font(.body)
+                        .foregroundColor(.gray)
+                } else {
+                    Text("Il biglietto non era vincente")
+                        .font(.title3)
+                        .foregroundColor(.white)
+                    
+                    Text("Costo biglietto: -€\(Int(ticketPrice))")
+                        .font(.body)
+                        .foregroundColor(.red)
+                }
+            }
+            .multilineTextAlignment(.center)
+            .padding(.horizontal)
+            
+            // Nuovo saldo
+            VStack(spacing: 4) {
+                Text("Nuovo saldo:")
+                    .font(.caption)
+                    .foregroundColor(.gray)
+                Text("€\(balance, specifier: "%.0f")")
+                    .font(.title2.bold())
+                    .foregroundColor(.accentCyan)
+            }
+            .padding(.vertical, 10)
+            
+            // Pulsanti azione
+            VStack(spacing: 15) {
+                Button {
+                    // Controlla se può pagare un nuovo biglietto
+                    if balance >= ticketPrice {
+                        startNewGame()
+                    } else {
+                        isPresented = false
+                    }
+                } label: {
+                    HStack {
+                        Image(systemName: "play.fill")
+                        Text("GIOCA ANCORA (€\(Int(ticketPrice)))")
+                    }
+                    .font(.headline)
+                    .foregroundColor(.black)
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(balance >= ticketPrice ? Color.accentCyan : Color.gray)
+                    .cornerRadius(16)
+                }
+                .disabled(balance < ticketPrice)
+                
+                Button {
+                    isPresented = false
+                } label: {
+                    Text("TORNA AI GIOCHI")
+                        .font(.headline)
+                        .foregroundColor(.accentCyan)
+                        .padding(.top, 5)
+                }
+            }
+            .padding(.horizontal, 20)
+        }
+        .padding(30)
+        .background(Color.white.opacity(0.08))
+        .cornerRadius(25)
+        .padding(.horizontal, 20)
+    }
+    
+    private func startNewGame() {
+        // Sottrai il costo del biglietto
+        balance -= ticketPrice
+        
+        // Reset gioco
+        scratchedPoints = []
+        isScratched = false
+        opacity = 1.0
+        currentScratches = 0
+        showResult = false
+        isPlaying = true
+        
+        // Seleziona nuovo premio casuale
+        prize = prizes.randomElement() ?? 0
     }
     
     private func revealPrize() {
@@ -306,9 +457,12 @@ struct ScratchCardView: View {
             
             // Aspetta un po' poi mostra il risultato
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                showResult = true
+                withAnimation {
+                    showResult = true
+                    isPlaying = false
+                }
                 
-                // Aggiungi premio al saldo
+                // Aggiungi premio al saldo (se c'è)
                 if prize > 0 {
                     balance += Double(prize)
                 }
@@ -322,12 +476,16 @@ struct ScratchCardView: View {
         opacity = 1.0
         currentScratches = 0
         showResult = false
+        isPlaying = true
+        
         // Seleziona nuovo premio casuale
         prize = prizes.randomElement() ?? 0
     }
 }
 
 struct ComingSoonView: View {
+    @Binding var isPresented: Bool
+    
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
@@ -353,11 +511,7 @@ struct ComingSoonView: View {
                     .padding(.horizontal)
                 
                 Button("Chiudi") {
-                    // Dismiss sheet
-                    if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-                       let rootViewController = windowScene.windows.first?.rootViewController {
-                        rootViewController.dismiss(animated: true)
-                    }
+                    isPresented = false
                 }
                 .padding()
                 .background(Color.accentCyan)
