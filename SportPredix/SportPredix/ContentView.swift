@@ -5,67 +5,13 @@
 
 import SwiftUI
 
-// MARK: - API FOOTBALL REAL MODELS
-
-struct ApiFootballResponse: Codable {
-    let response: [ApiFootballMatch]
-}
-
-struct ApiFootballMatch: Codable {
-    let fixture: Fixture
-    let league: League
-    let teams: Teams
-    let goals: Goals
-    let score: ScoreDetail
-}
-
-struct Fixture: Codable {
-    let id: Int
-    let date: String
-    let status: Status
-}
-
-struct Status: Codable {
-    let short: String
-}
-
-struct League: Codable {
-    let id: Int
-    let name: String
-    let country: String
-}
-
-struct Teams: Codable {
-    let home: Team
-    let away: Team
-}
-
-struct Team: Codable {
-    let id: Int
-    let name: String
-}
-
-struct Goals: Codable {
-    let home: Int?
-    let away: Int?
-}
-
-struct ScoreDetail: Codable {
-    let fulltime: ScoreTime
-}
-
-struct ScoreTime: Codable {
-    let home: Int?
-    let away: Int?
-}
-
 // MARK: - THEME
 
 extension Color {
     static let accentCyan = Color(red: 68/255, green: 224/255, blue: 203/255)
 }
 
-// MARK: - MODELS ESISTENTI
+// MARK: - MODELLI
 
 enum MatchOutcome: String, Codable {
     case home = "1"
@@ -115,9 +61,6 @@ struct Match: Identifiable, Codable {
     var goals: Int?
     var competition: String
     var status: String
-    var isReal: Bool
-    var homeLogo: String?
-    var awayLogo: String?
     var actualResult: String?
 }
 
@@ -143,7 +86,7 @@ struct BetSlip: Identifiable, Codable {
     var expectedValue: Double { potentialWin * impliedProbability - stake }
 }
 
-// MARK: - VIEW MODEL FUNZIONANTE SOLO CON API-FOOTBALL
+// MARK: - VIEW MODEL SOLO SIMULATO
 
 final class BettingViewModel: ObservableObject {
     
@@ -174,19 +117,8 @@ final class BettingViewModel: ObservableObject {
     
     @Published var dailyMatches: [String: [Match]] = [:]
     
-    // API Properties
-    @Published var isLoading = false
-    @Published var apiError: String?
-    @Published var useRealMatches = false
-    @Published var lastUpdateTime: Date?
-    
     private let slipsKey = "savedSlips"
     private let matchesKey = "savedMatches"
-    private let useRealMatchesKey = "useRealMatches"
-    
-    // API FOOTBALL CONFIG - LA TUA KEY
-    private let apiKey = "9bda6d4e68msh9c9fee4f49bd736p1a6754jsn10451950a38e"
-    private let apiHost = "api-football-v1.p.rapidapi.com"
     
     init() {
         let savedBalance = UserDefaults.standard.double(forKey: "balance")
@@ -197,223 +129,10 @@ final class BettingViewModel: ObservableObject {
         self.notificationsEnabled = UserDefaults.standard.object(forKey: "notificationsEnabled") as? Bool ?? true
         self.privacyEnabled = UserDefaults.standard.object(forKey: "privacyEnabled") as? Bool ?? false
         
-        self.useRealMatches = UserDefaults.standard.object(forKey: useRealMatchesKey) as? Bool ?? false
-        
         self.slips = loadSlips()
         self.dailyMatches = loadMatches()
         
         generateTodayIfNeeded()
-        
-        if useRealMatches {
-            fetchRealMatchesNow()
-        }
-    }
-    
-    // MARK: - REAL MATCHES FUNCTIONS
-    
-    func toggleRealMatches() {
-        useRealMatches.toggle()
-        UserDefaults.standard.set(useRealMatches, forKey: useRealMatchesKey)
-        
-        if useRealMatches {
-            fetchRealMatchesNow()
-        } else {
-            generateTodayIfNeeded()
-        }
-    }
-    
-    func fetchRealMatchesNow() {
-        isLoading = true
-        apiError = nil
-        
-        let today = Date()
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateFormat = "yyyy-MM-dd"
-        let todayString = dateFormatter.string(from: today)
-        
-        // Endpoint API-Football per partite di oggi
-        let url = URL(string: "https://\(apiHost)/v3/fixtures?date=\(todayString)")!
-        
-        var request = URLRequest(url: url)
-        request.httpMethod = "GET"
-        request.setValue(apiKey, forHTTPHeaderField: "x-rapidapi-key")
-        request.setValue(apiHost, forHTTPHeaderField: "x-rapidapi-host")
-        request.timeoutInterval = 15
-        
-        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
-            DispatchQueue.main.async {
-                self?.isLoading = false
-                
-                if let error = error {
-                    self?.apiError = "Errore rete: \(error.localizedDescription)"
-                    self?.generateTodayIfNeeded()
-                    return
-                }
-                
-                guard let data = data else {
-                    self?.apiError = "Nessun dato ricevuto"
-                    self?.generateTodayIfNeeded()
-                    return
-                }
-                
-                do {
-                    let apiResponse = try JSONDecoder().decode(ApiFootballResponse.self, from: data)
-                    
-                    if apiResponse.response.isEmpty {
-                        self?.apiError = "Nessuna partita trovata per oggi"
-                        self?.generateTodayIfNeeded()
-                    } else {
-                        self?.processApiFootballMatches(apiResponse.response)
-                    }
-                } catch {
-                    print("❌ Errore decodifica API-Football: \(error)")
-                    self?.apiError = "Formato dati API non valido"
-                    self?.generateTodayIfNeeded()
-                }
-            }
-        }.resume()
-    }
-    
-    private func processApiFootballMatches(_ apiMatches: [ApiFootballMatch]) {
-        var allConvertedMatches: [Match] = []
-        
-        for apiMatch in apiMatches.prefix(20) { // Limita a 20 partite
-            // Formatta orario
-            let dateFormatter = ISO8601DateFormatter()
-            dateFormatter.formatOptions = [.withInternetDateTime]
-            
-            var timeString = "TBD"
-            if let date = dateFormatter.date(from: apiMatch.fixture.date) {
-                let timeFormatter = DateFormatter()
-                timeFormatter.dateFormat = "HH:mm"
-                timeString = timeFormatter.string(from: date)
-            }
-            
-            // Determina risultato
-            var result: MatchOutcome?
-            var goals: Int?
-            var actualResult: String?
-            let status = apiMatch.fixture.status.short
-            
-            if status == "FT" || status == "AET" || status == "PEN" {
-                goals = (apiMatch.goals.home ?? 0) + (apiMatch.goals.away ?? 0)
-                actualResult = "\(apiMatch.goals.home ?? 0)-\(apiMatch.goals.away ?? 0)"
-                
-                if (apiMatch.goals.home ?? 0) > (apiMatch.goals.away ?? 0) {
-                    result = .home
-                } else if (apiMatch.goals.away ?? 0) > (apiMatch.goals.home ?? 0) {
-                    result = .away
-                } else {
-                    result = .draw
-                }
-            }
-            
-            // Genera quote REALISTICHE basate sulle squadre
-            let odds = generateRealOddsForMatch(homeTeam: apiMatch.teams.home.name, 
-                                                awayTeam: apiMatch.teams.away.name,
-                                                status: status)
-            
-            let match = Match(
-                id: UUID(),
-                home: apiMatch.teams.home.name,
-                away: apiMatch.teams.away.name,
-                time: timeString,
-                odds: odds,
-                result: result,
-                goals: goals,
-                competition: "\(apiMatch.league.country) - \(apiMatch.league.name)",
-                status: status,
-                isReal: true,
-                homeLogo: nil,
-                awayLogo: nil,
-                actualResult: actualResult
-            )
-            
-            allConvertedMatches.append(match)
-        }
-        
-        if allConvertedMatches.isEmpty {
-            apiError = "Nessuna partita trovata per oggi"
-            generateTodayIfNeeded()
-        } else {
-            let todayKey = keyForDate(Date())
-            dailyMatches[todayKey] = allConvertedMatches
-            saveMatches()
-            lastUpdateTime = Date()
-        }
-    }
-    
-    private func generateRealOddsForMatch(homeTeam: String, awayTeam: String, status: String) -> Odds {
-        // Logica per quote realistiche
-        let teams = [
-            "Milan": 85, "Inter": 87, "Juventus": 86, "Napoli": 84, "Roma": 83, "Lazio": 82,
-            "Real Madrid": 90, "Barcelona": 89, "Atletico Madrid": 88, "Sevilla": 83,
-            "Manchester City": 92, "Liverpool": 91, "Arsenal": 88, "Chelsea": 87, "Manchester United": 85, "Tottenham": 84,
-            "Bayern Munich": 93, "Borussia Dortmund": 88, "RB Leipzig": 85, "Bayer Leverkusen": 84,
-            "PSG": 89, "Marseille": 83, "Lyon": 82, "Monaco": 81
-        ]
-        
-        let homeStrength = Double(teams[homeTeam] ?? 70)
-        let awayStrength = Double(teams[awayTeam] ?? 70)
-        let diff = (homeStrength - awayStrength) / 10.0
-        
-        let baseHome: Double
-        let baseDraw: Double
-        let baseAway: Double
-        
-        if diff > 2.0 {
-            baseHome = 1.40
-            baseDraw = 4.50
-            baseAway = 7.00
-        } else if diff > 1.0 {
-            baseHome = 1.65
-            baseDraw = 3.80
-            baseAway = 5.00
-        } else if diff > 0.5 {
-            baseHome = 1.85
-            baseDraw = 3.60
-            baseAway = 4.00
-        } else if diff > -0.5 {
-            baseHome = 2.40
-            baseDraw = 3.30
-            baseAway = 2.90
-        } else if diff > -1.0 {
-            baseHome = 2.80
-            baseDraw = 3.40
-            baseAway = 2.40
-        } else if diff > -2.0 {
-            baseHome = 3.50
-            baseDraw = 3.50
-            baseAway = 2.05
-        } else {
-            baseHome = 5.00
-            baseDraw = 4.00
-            baseAway = 1.65
-        }
-        
-        // Calcola quote combinate
-        let homeDraw = 1.0 / ((1.0/baseHome) + (1.0/baseDraw))
-        let homeAway = 1.0 / ((1.0/baseHome) + (1.0/baseAway))
-        let drawAway = 1.0 / ((1.0/baseDraw) + (1.0/baseAway))
-        
-        return Odds(
-            home: baseHome,
-            draw: baseDraw,
-            away: baseAway,
-            homeDraw: homeDraw,
-            homeAway: homeAway,
-            drawAway: drawAway,
-            over05: 1.12,
-            under05: 6.50,
-            over15: 1.45,
-            under15: 2.65,
-            over25: 1.95,
-            under25: 1.85,
-            over35: 2.80,
-            under35: 1.40,
-            over45: 4.50,
-            under45: 1.18
-        )
     }
     
     // MARK: - DATE HELPERS
@@ -487,9 +206,6 @@ final class BettingViewModel: ObservableObject {
                     goals: goals,
                     competition: competition,
                     status: "FINISHED",
-                    isReal: false,
-                    homeLogo: nil,
-                    awayLogo: nil,
                     actualResult: result == .home ? "2-1" : result == .away ? "0-2" : "1-1"
                 )
                 
@@ -743,7 +459,7 @@ final class BettingViewModel: ObservableObject {
     }
 }
 
-// MARK: - MAIN VIEW
+// MARK: - MAIN VIEW (PULITO, SENZA API)
 
 struct ContentView: View {
     
@@ -761,16 +477,10 @@ struct ContentView: View {
                     
                     if vm.selectedTab == 0 {
                         calendarBarView
-                        
-                        if vm.isLoading {
-                            loadingView
-                        } else if let error = vm.apiError {
-                            errorView(error: error)
-                        } else {
-                            matchListView
-                        }
+                        matchListView
                     } else if vm.selectedTab == 1 {
                         GamesView()
+                            .environmentObject(vm)
                     } else if vm.selectedTab == 2 {
                         placedBetsView
                     } else {
@@ -810,91 +520,9 @@ struct ContentView: View {
                 Text("€\(vm.balance, specifier: "%.2f")")
                     .foregroundColor(.accentCyan)
                     .bold()
-                
-                if vm.selectedTab == 0 {
-                    Button {
-                        vm.toggleRealMatches()
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: vm.useRealMatches ? "antenna.radiowaves.left.and.right" : "gamecontroller.fill")
-                                .font(.caption)
-                            
-                            Text(vm.useRealMatches ? "REALI" : "SIMULATE")
-                                .font(.caption2.bold())
-                        }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 4)
-                        .background(
-                            Capsule()
-                                .fill(vm.useRealMatches ? Color.green.opacity(0.3) : Color.gray.opacity(0.3))
-                                .overlay(
-                                    Capsule()
-                                        .stroke(vm.useRealMatches ? Color.green : Color.gray, lineWidth: 1)
-                                )
-                        )
-                        .foregroundColor(vm.useRealMatches ? .green : .gray)
-                    }
-                }
             }
         }
         .padding()
-    }
-    
-    // MARK: - LOADING VIEW
-    
-    private var loadingView: some View {
-        VStack(spacing: 20) {
-            Spacer()
-            ProgressView()
-                .scaleEffect(1.5)
-                .tint(.accentCyan)
-            
-            Text("Caricando partite reali da API-Football...")
-                .foregroundColor(.white)
-            
-            Spacer()
-        }
-    }
-    
-    // MARK: - ERROR VIEW
-    
-    private func errorView(error: String) -> some View {
-        VStack(spacing: 20) {
-            Spacer()
-            Image(systemName: "exclamationmark.triangle")
-                .font(.system(size: 50))
-                .foregroundColor(.orange)
-            
-            Text("Errore API-Football")
-                .font(.title2)
-                .foregroundColor(.white)
-            
-            Text(error)
-                .foregroundColor(.gray)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal)
-            
-            Button("Riprova") {
-                if vm.useRealMatches {
-                    vm.fetchRealMatchesNow()
-                } else {
-                    vm.generateTodayIfNeeded()
-                }
-            }
-            .padding()
-            .background(Color.accentCyan)
-            .foregroundColor(.black)
-            .cornerRadius(12)
-            
-            Button("Usa partite simulate") {
-                vm.useRealMatches = false
-                vm.generateTodayIfNeeded()
-            }
-            .padding()
-            .foregroundColor(.gray)
-            
-            Spacer()
-        }
     }
     
     // MARK: CALENDAR BAR
@@ -922,36 +550,6 @@ struct ContentView: View {
                 }
             }
             .padding(.horizontal)
-            
-            if vm.useRealMatches {
-                HStack(spacing: 8) {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundColor(.green)
-                        .font(.caption)
-                    
-                    Text("API-FOOTBALL • LIVE")
-                        .font(.caption)
-                        .foregroundColor(.green)
-                    
-                    if let lastUpdate = vm.lastUpdateTime {
-                        Text("•")
-                            .foregroundColor(.gray)
-                        Text("Agg: \(lastUpdate, style: .time)")
-                            .font(.caption2)
-                            .foregroundColor(.gray)
-                    }
-                }
-            } else {
-                HStack(spacing: 8) {
-                    Image(systemName: "gamecontroller.fill")
-                        .foregroundColor(.gray)
-                        .font(.caption)
-                    
-                    Text("PARTITE SIMULATE • DEMO")
-                        .font(.caption)
-                        .foregroundColor(.gray)
-                }
-            }
         }
         .padding(.bottom, 8)
     }
@@ -974,12 +572,6 @@ struct ContentView: View {
                                     .font(.headline)
                                     .foregroundColor(.accentCyan)
                                 Spacer()
-                                
-                                if vm.useRealMatches {
-                                    Image(systemName: "livephoto")
-                                        .foregroundColor(.green)
-                                        .font(.caption)
-                                }
                             }
                             .padding(.horizontal, 4)
                             
@@ -996,11 +588,6 @@ struct ContentView: View {
         }
         .id(vm.selectedDayIndex)
         .transition(.opacity)
-        .refreshable {
-            if vm.useRealMatches {
-                vm.fetchRealMatchesNow()
-            }
-        }
     }
     
     private var emptyMatchesView: some View {
@@ -1008,27 +595,21 @@ struct ContentView: View {
             Spacer()
                 .frame(height: 50)
             
-            Image(systemName: vm.useRealMatches ? "wifi.slash" : "soccerball")
+            Image(systemName: "soccerball")
                 .font(.system(size: 60))
                 .foregroundColor(.accentCyan)
             
-            Text(vm.useRealMatches ? "Nessuna partita API" : "Partite simulate")
+            Text("Partite simulate")
                 .font(.title2)
                 .foregroundColor(.white)
             
-            Text(vm.useRealMatches ? 
-                 "API-Football non ha restituito partite per oggi" :
-                 "Attiva le partite reali per dati da API-Football")
+            Text("Nessuna partita generata per oggi")
                 .foregroundColor(.gray)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal)
             
-            Button(vm.useRealMatches ? "Ricarica" : "Attiva partite reali") {
-                if vm.useRealMatches {
-                    vm.fetchRealMatchesNow()
-                } else {
-                    vm.useRealMatches = true
-                }
+            Button("Ricarica") {
+                vm.generateTodayIfNeeded()
             }
             .padding()
             .background(Color.accentCyan)
@@ -1043,18 +624,10 @@ struct ContentView: View {
         VStack(spacing: 12) {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 8) {
-                        if match.isReal {
-                            Circle()
-                                .fill(Color.green)
-                                .frame(width: 8, height: 8)
-                        }
-                        
-                        Text(match.home)
-                            .font(.headline)
-                            .foregroundColor(disabled ? .gray : .white)
-                            .lineLimit(1)
-                    }
+                    Text(match.home)
+                        .font(.headline)
+                        .foregroundColor(disabled ? .gray : .white)
+                        .lineLimit(1)
                     
                     Text(match.competition)
                         .font(.caption2)
@@ -1064,18 +637,10 @@ struct ContentView: View {
                 Spacer()
                 
                 VStack(alignment: .trailing, spacing: 4) {
-                    HStack(spacing: 8) {
-                        Text(match.away)
-                            .font(.headline)
-                            .foregroundColor(disabled ? .gray : .white)
-                            .lineLimit(1)
-                        
-                        if match.isReal {
-                            Circle()
-                                .fill(Color.green)
-                                .frame(width: 8, height: 8)
-                        }
-                    }
+                    Text(match.away)
+                        .font(.headline)
+                        .foregroundColor(disabled ? .gray : .white)
+                        .lineLimit(1)
                     
                     if let actualResult = match.actualResult {
                         Text(actualResult)
@@ -1096,7 +661,7 @@ struct ContentView: View {
                         .foregroundColor(.gray)
                     Text("\(match.odds.home, specifier: "%.2f")")
                         .font(.system(.body, design: .monospaced).bold())
-                        .foregroundColor(match.isReal ? .green : .white)
+                        .foregroundColor(.white)
                 }
                 .frame(maxWidth: .infinity)
                 
@@ -1106,44 +671,40 @@ struct ContentView: View {
                 
                 VStack(spacing: 4) {
                     Text("X")
-                            .font(.caption)
-                            .foregroundColor(.gray)
-                        Text("\(match.odds.draw, specifier: "%.2f")")
-                            .font(.system(.body, design: .monospaced).bold())
-                            .foregroundColor(match.isReal ? .green : .white)
-                    }
-                    .frame(maxWidth: .infinity)
-                    
-                    Divider()
-                        .frame(height: 30)
-                        .background(Color.gray.opacity(0.3))
-                    
-                    VStack(spacing: 4) {
-                        Text("2")
-                            .font(.caption)
-                            .foregroundColor(.gray)
-                        Text("\(match.odds.away, specifier: "%.2f")")
-                            .font(.system(.body, design: .monospaced).bold())
-                            .foregroundColor(match.isReal ? .green : .white)
-                    }
-                    .frame(maxWidth: .infinity)
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                    Text("\(match.odds.draw, specifier: "%.2f")")
+                        .font(.system(.body, design: .monospaced).bold())
+                        .foregroundColor(.white)
                 }
-                .padding(.horizontal, 10)
+                .frame(maxWidth: .infinity)
+                
+                Divider()
+                    .frame(height: 30)
+                    .background(Color.gray.opacity(0.3))
+                
+                VStack(spacing: 4) {
+                    Text("2")
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                    Text("\(match.odds.away, specifier: "%.2f")")
+                        .font(.system(.body, design: .monospaced).bold())
+                        .foregroundColor(.white)
+                }
+                .frame(maxWidth: .infinity)
             }
-            .padding()
-            .background(
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(disabled ? Color.gray.opacity(0.1) : Color.white.opacity(0.06))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 16)
-                            .stroke(
-                                disabled ? Color.gray.opacity(0.2) : 
-                                (match.isReal ? Color.green.opacity(0.4) : Color.white.opacity(0.1)),
-                                lineWidth: match.isReal ? 2 : 1
-                            )
-                    )
-            )
+            .padding(.horizontal, 10)
         }
+        .padding()
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(disabled ? Color.gray.opacity(0.1) : Color.white.opacity(0.06))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16)
+                        .stroke(disabled ? Color.gray.opacity(0.2) : Color.white.opacity(0.1), lineWidth: 1)
+                )
+        )
+    }
     
     // MARK: PLACED BETS
     
