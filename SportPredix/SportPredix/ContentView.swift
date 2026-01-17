@@ -64,6 +64,7 @@ struct Match: Identifiable, Codable {
     var isReal: Bool
     var homeLogo: String?
     var awayLogo: String?
+    var actualResult: String?
 }
 
 struct BetPick: Identifiable, Codable {
@@ -88,31 +89,57 @@ struct BetSlip: Identifiable, Codable {
     var expectedValue: Double { potentialWin * impliedProbability - stake }
 }
 
-// MARK: - PUBLIC API MODELS
+// MARK: - FOOTBALL-DATA.ORG MODELS
 
-struct PublicAPIMatch: Codable {
-    let home_team: String
-    let away_team: String
-    let commence_time: String
-    let sport_key: String
-    let sport_title: String
-    let bookmakers: [PublicAPIBookmaker]?
+struct FootballDataMatch: Codable {
+    let id: Int
+    let utcDate: String
+    let status: String
+    let matchday: Int?
+    let stage: String?
+    let group: String?
+    let lastUpdated: String
+    let homeTeam: FootballDataTeam
+    let awayTeam: FootballDataTeam
+    let score: FootballDataScore
+    let competition: FootballDataCompetition
+    
+    enum CodingKeys: String, CodingKey {
+        case id, utcDate, status, matchday, stage, group, lastUpdated
+        case homeTeam, awayTeam, score, competition
+    }
 }
 
-struct PublicAPIBookmaker: Codable {
-    let key: String
-    let title: String
-    let markets: [PublicAPIMarket]?
-}
-
-struct PublicAPIMarket: Codable {
-    let key: String
-    let outcomes: [PublicAPIOutcome]?
-}
-
-struct PublicAPIOutcome: Codable {
+struct FootballDataTeam: Codable {
+    let id: Int
     let name: String
-    let price: Double?
+    let shortName: String?
+    let tla: String?
+    let crest: String?
+}
+
+struct FootballDataScore: Codable {
+    let winner: String?
+    let duration: String?
+    let fullTime: FootballDataTimeScore?
+    let halfTime: FootballDataTimeScore?
+}
+
+struct FootballDataTimeScore: Codable {
+    let home: Int?
+    let away: Int?
+}
+
+struct FootballDataCompetition: Codable {
+    let id: Int
+    let name: String
+    let code: String
+    let type: String
+    let emblem: String?
+}
+
+struct FootballDataResponse: Codable {
+    let matches: [FootballDataMatch]
 }
 
 // MARK: - VIEW MODEL
@@ -156,42 +183,14 @@ final class BettingViewModel: ObservableObject {
     private let matchesKey = "savedMatches"
     private let useRealMatchesKey = "useRealMatches"
     
-    // ENDPOINT PUBBLICO FUNZIONANTE (senza API key!)
-    private let publicAPIURL = "https://api.the-odds-api.com/v4/sports/soccer/odds/?apiKey=demo&regions=eu&markets=h2h&oddsFormat=decimal"
+    // LA TUA API KEY DI FOOTBALL-DATA.ORG
+    private let apiKey = "1509673c3a344745b0159b18dfbc0d1c"
+    private let baseURL = "https://api.football-data.org/v4"
     
-    // Competizioni popolari con team reali
-    private let realTeams = [
-        "Premier League": [
-            "Arsenal", "Aston Villa", "Bournemouth", "Brentford", "Brighton", 
-            "Chelsea", "Crystal Palace", "Everton", "Fulham", "Leeds United",
-            "Leicester City", "Liverpool", "Manchester City", "Manchester United",
-            "Newcastle United", "Nottingham Forest", "Southampton", "Tottenham", "West Ham", "Wolves"
-        ],
-        "Serie A": [
-            "AC Milan", "Atalanta", "Bologna", "Cremonese", "Empoli",
-            "Fiorentina", "Inter", "Juventus", "Lazio", "Lecce",
-            "Monza", "Napoli", "Roma", "Salernitana", "Sampdoria",
-            "Sassuolo", "Spezia", "Torino", "Udinese", "Verona"
-        ],
-        "La Liga": [
-            "Almería", "Athletic Club", "Atlético Madrid", "Barcelona",
-            "Betis", "Cádiz", "Celta Vigo", "Elche", "Espanyol",
-            "Getafe", "Girona", "Mallorca", "Osasuna", "Rayo Vallecano",
-            "Real Madrid", "Real Sociedad", "Sevilla", "Valencia", "Valladolid", "Villarreal"
-        ],
-        "Bundesliga": [
-            "Augsburg", "Bayer Leverkusen", "Bayern Munich", "Bochum",
-            "Borussia Dortmund", "Borussia M'gladbach", "Eintracht Frankfurt",
-            "Freiburg", "Hertha Berlin", "Hoffenheim", "Köln", "Mainz 05",
-            "RB Leipzig", "Schalke 04", "Stuttgart", "Union Berlin", "Werder Bremen", "Wolfsburg"
-        ],
-        "Ligue 1": [
-            "Ajaccio", "Angers", "Auxerre", "Brest", "Clermont",
-            "Lens", "Lille", "Lorient", "Lyon", "Marseille",
-            "Monaco", "Montpellier", "Nantes", "Nice", "Paris Saint-Germain",
-            "Reims", "Rennes", "Strasbourg", "Toulouse", "Troyes"
-        ]
-    ]
+    // Proprietà pubblica per verificare se l'API key è configurata
+    var hasAPIKey: Bool {
+        return !apiKey.isEmpty && apiKey != "LA_TUA_API_KEY_AQUI"
+    }
     
     init() {
         let savedBalance = UserDefaults.standard.double(forKey: "balance")
@@ -210,79 +209,263 @@ final class BettingViewModel: ObservableObject {
         generateTodayIfNeeded()
         
         // Carica partite reali all'avvio se l'opzione è attiva
-        if useRealMatches {
-            loadRealMatchesFromPublicAPI()
+        if useRealMatches && hasAPIKey {
+            fetchRealMatchesFromFootballData()
         }
     }
     
-    // MARK: - REAL MATCHES FROM PUBLIC API
+    // MARK: - FOOTBALL-DATA.ORG API FUNCTIONS
     
     func toggleRealMatches() {
         useRealMatches.toggle()
         UserDefaults.standard.set(useRealMatches, forKey: useRealMatchesKey)
         
-        if useRealMatches {
-            loadRealMatchesFromPublicAPI()
-        } else {
+        if useRealMatches && hasAPIKey {
+            fetchRealMatchesFromFootballData()
+        } else if !useRealMatches {
             // Torna alle partite simulate
             generateTodayIfNeeded()
+        } else if useRealMatches && !hasAPIKey {
+            apiError = "API key mancante. Configura la tua API key di Football-Data.org"
         }
     }
     
-    func loadRealMatchesFromPublicAPI() {
+    func fetchRealMatchesFromFootballData() {
+        guard hasAPIKey else {
+            apiError = "API key non configurata correttamente"
+            return
+        }
+        
         isLoading = true
         apiError = nil
         
-        print("📡 Caricando partite reali da API pubblica...")
+        print("📡 Fetching real matches from Football-Data.org...")
         
-        guard let url = URL(string: publicAPIURL) else {
-            apiError = "URL API non valido"
+        // Calcola date per oggi
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd"
+        let today = dateFormatter.string(from: Date())
+        
+        // URL per le partite di oggi
+        let urlString = "\(baseURL)/matches?dateFrom=\(today)&dateTo=\(today)"
+        
+        guard let url = URL(string: urlString) else {
+            apiError = "URL non valido"
             isLoading = false
             return
         }
         
-        let task = URLSession.shared.dataTask(with: url) { [weak self] data, response, error in
+        var request = URLRequest(url: url)
+        request.setValue(apiKey, forHTTPHeaderField: "X-Auth-Token")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        
+        let task = URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
             DispatchQueue.main.async {
                 self?.isLoading = false
                 
                 if let error = error {
-                    print("❌ Errore API: \(error.localizedDescription)")
-                    self?.apiError = "Errore di rete. Carico partite realistiche..."
-                    // Fallback a partite realistiche se l'API fallisce
+                    print("❌ Network error: \(error.localizedDescription)")
+                    self?.apiError = "Errore di rete: \(error.localizedDescription)"
+                    self?.loadFallbackMatches()
+                    return
+                }
+                
+                guard let httpResponse = response as? HTTPURLResponse else {
+                    self?.apiError = "Risposta non valida dal server"
+                    self?.loadFallbackMatches()
+                    return
+                }
+                
+                print("📊 Status Code: \(httpResponse.statusCode)")
+                
+                guard httpResponse.statusCode == 200 else {
+                    if httpResponse.statusCode == 429 {
+                        self?.apiError = "Troppe richieste. Limite API raggiunto. Usa partite simulate."
+                    } else if httpResponse.statusCode == 403 {
+                        self?.apiError = "API key non valida o scaduta"
+                    } else {
+                        self?.apiError = "Errore server: \(httpResponse.statusCode)"
+                    }
                     self?.loadFallbackMatches()
                     return
                 }
                 
                 guard let data = data else {
-                    print("❌ Nessun dato ricevuto")
-                    self?.apiError = "Nessun dato. Carico partite realistiche..."
+                    self?.apiError = "Nessun dato ricevuto"
                     self?.loadFallbackMatches()
                     return
                 }
                 
-                // Prova a decodificare la risposta
                 do {
-                    let apiMatches = try JSONDecoder().decode([PublicAPIMatch].self, from: data)
-                    print("✅ Ricevute \(apiMatches.count) partite dall'API")
+                    let response = try JSONDecoder().decode(FootballDataResponse.self, from: data)
+                    print("✅ Ricevute \(response.matches.count) partite da Football-Data.org")
                     
-                    if apiMatches.isEmpty {
-                        print("⚠️ API vuota, uso fallback")
+                    if response.matches.isEmpty {
+                        print("⚠️ Nessuna partita trovata per oggi")
+                        self?.apiError = "Nessuna partita programmata per oggi"
                         self?.loadFallbackMatches()
                     } else {
-                        self?.processPublicAPIMatches(apiMatches)
+                        self?.processFootballDataMatches(response.matches)
                     }
                 } catch {
-                    print("❌ Errore decodifica: \(error)")
-                    print("📄 Risposta API: \(String(data: data, encoding: .utf8)?.prefix(500) ?? "N/A")")
-                    
-                    // Fallback sempre a partite realistiche
-                    self?.apiError = "API non disponibile. Carico partite realistiche..."
+                    print("❌ JSON decode error: \(error)")
+                    if let jsonString = String(data: data, encoding: .utf8) {
+                        print("📄 Response: \(jsonString.prefix(500))...")
+                    }
+                    self?.apiError = "Errore nel processare i dati"
                     self?.loadFallbackMatches()
                 }
             }
         }
         
         task.resume()
+    }
+    
+    private func processFootballDataMatches(_ apiMatches: [FootballDataMatch]) {
+        let todayKey = keyForDate(Date())
+        var convertedMatches: [Match] = []
+        
+        for apiMatch in apiMatches {
+            // Converti data UTC in orario locale
+            let dateFormatter = DateFormatter()
+            dateFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ssZ"
+            dateFormatter.locale = Locale(identifier: "en_US_POSIX")
+            
+            var timeString = "TBD"
+            if let date = dateFormatter.date(from: apiMatch.utcDate) {
+                let timeFormatter = DateFormatter()
+                timeFormatter.dateFormat = "HH:mm"
+                timeFormatter.timeZone = TimeZone.current
+                timeString = timeFormatter.string(from: date)
+            }
+            
+            // Determina risultato reale se la partita è finita
+            var result: MatchOutcome?
+            var goals: Int?
+            var actualResult: String?
+            
+            if apiMatch.status == "FINISHED" || apiMatch.status == "AWARDED" {
+                if let fullTime = apiMatch.score.fullTime {
+                    let homeGoals = fullTime.home ?? 0
+                    let awayGoals = fullTime.away ?? 0
+                    goals = homeGoals + awayGoals
+                    
+                    if homeGoals > awayGoals {
+                        result = .home
+                        actualResult = "\(homeGoals)-\(awayGoals)"
+                    } else if awayGoals > homeGoals {
+                        result = .away
+                        actualResult = "\(homeGoals)-\(awayGoals)"
+                    } else {
+                        result = .draw
+                        actualResult = "\(homeGoals)-\(awayGoals)"
+                    }
+                }
+            }
+            
+            // Crea quote realistiche basate su dati reali
+            let odds = createRealisticOddsForFootballDataMatch(apiMatch)
+            
+            let match = Match(
+                id: UUID(),
+                home: apiMatch.homeTeam.name,
+                away: apiMatch.awayTeam.name,
+                time: timeString,
+                odds: odds,
+                result: result,
+                goals: goals,
+                competition: apiMatch.competition.name,
+                status: apiMatch.status,
+                isReal: true,
+                homeLogo: apiMatch.homeTeam.crest,
+                awayLogo: apiMatch.awayTeam.crest,
+                actualResult: actualResult
+            )
+            
+            convertedMatches.append(match)
+        }
+        
+        // Salva le partite
+        dailyMatches[todayKey] = convertedMatches
+        saveMatches()
+        lastUpdateTime = Date()
+        print("💾 Salvate \(convertedMatches.count) partite reali")
+    }
+    
+    private func createRealisticOddsForFootballDataMatch(_ match: FootballDataMatch) -> Odds {
+        // Crea quote realistiche basate su dati reali
+        // Per partite finite, usa il risultato per generare quote realistiche
+        // Per partite future, genera quote casuali ma realistiche
+        
+        var homeOdd: Double
+        var drawOdd: Double
+        var awayOdd: Double
+        
+        if match.status == "FINISHED" {
+            // Per partite finite, crea quote basate sul risultato
+            if let score = match.score.fullTime {
+                let homeGoals = score.home ?? 0
+                let awayGoals = score.away ?? 0
+                
+                if homeGoals > awayGoals {
+                    // Vittoria casa - quote basse per la casa
+                    homeOdd = Double.random(in: 1.30...1.80)
+                    drawOdd = Double.random(in: 3.50...4.50)
+                    awayOdd = Double.random(in: 4.00...7.00)
+                } else if awayGoals > homeGoals {
+                    // Vittoria trasferta - quote basse per la trasferta
+                    homeOdd = Double.random(in: 2.50...4.00)
+                    drawOdd = Double.random(in: 3.00...4.00)
+                    awayOdd = Double.random(in: 1.60...2.50)
+                } else {
+                    // Pareggio - quote equilibrate
+                    homeOdd = Double.random(in: 2.00...3.00)
+                    drawOdd = Double.random(in: 3.00...3.50)
+                    awayOdd = Double.random(in: 2.50...3.50)
+                }
+            } else {
+                // Default se non ci sono dati
+                homeOdd = 2.00
+                drawOdd = 3.40
+                awayOdd = 3.60
+            }
+        } else {
+            // Per partite future, quote casuali ma realistiche
+            homeOdd = Double.random(in: 1.50...3.50)
+            drawOdd = Double.random(in: 3.00...4.00)
+            awayOdd = Double.random(in: 2.00...5.00)
+            
+            // Normalizza per somma delle probabilità
+            let total = 1/homeOdd + 1/drawOdd + 1/awayOdd
+            let adjustment = 1.05 // 5% margin
+            homeOdd = 1 / ((1/homeOdd) / total * adjustment)
+            drawOdd = 1 / ((1/drawOdd) / total * adjustment)
+            awayOdd = 1 / ((1/awayOdd) / total * adjustment)
+        }
+        
+        // Crea quote derivate
+        let homeDraw = 1.0 / ((1.0/homeOdd) + (1.0/drawOdd))
+        let homeAway = 1.0 / ((1.0/homeOdd) + (1.0/awayOdd))
+        let drawAway = 1.0 / ((1.0/drawOdd) + (1.0/awayOdd))
+        
+        return Odds(
+            home: homeOdd,
+            draw: drawOdd,
+            away: awayOdd,
+            homeDraw: homeDraw,
+            homeAway: homeAway,
+            drawAway: drawAway,
+            over05: 1.12,
+            under05: 6.50,
+            over15: 1.45,
+            under15: 2.65,
+            over25: 1.95,
+            under25: 1.85,
+            over35: 2.80,
+            under35: 1.40,
+            over45: 4.50,
+            under45: 1.18
+        )
     }
     
     private func loadFallbackMatches() {
@@ -293,96 +476,32 @@ final class BettingViewModel: ObservableObject {
         lastUpdateTime = Date()
     }
     
-    private func processPublicAPIMatches(_ apiMatches: [PublicAPIMatch]) {
-        let todayKey = keyForDate(Date())
-        var convertedMatches: [Match] = []
-        
-        for apiMatch in apiMatches.prefix(20) { // Limita a 20 partite
-            // Estrai orario
-            let dateFormatter = DateFormatter()
-            dateFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ssZ"
-            dateFormatter.locale = Locale(identifier: "en_US_POSIX")
-            
-            var timeString = "20:00"
-            if let date = dateFormatter.date(from: apiMatch.commence_time) {
-                let timeFormatter = DateFormatter()
-                timeFormatter.dateFormat = "HH:mm"
-                timeString = timeFormatter.string(from: date)
-            }
-            
-            // Estrai quote reali se disponibili
-            var homeOdd: Double = 2.0
-            var drawOdd: Double = 3.5
-            var awayOdd: Double = 3.0
-            
-            if let bet365 = apiMatch.bookmakers?.first(where: { $0.key == "bet365" }),
-               let h2hMarket = bet365.markets?.first(where: { $0.key == "h2h" }) {
-                
-                for outcome in h2hMarket.outcomes ?? [] {
-                    if outcome.name == apiMatch.home_team {
-                        homeOdd = outcome.price ?? 2.0
-                    } else if outcome.name == apiMatch.away_team {
-                        awayOdd = outcome.price ?? 3.0
-                    } else if outcome.name.lowercased().contains("draw") {
-                        drawOdd = outcome.price ?? 3.5
-                    }
-                }
-            }
-            
-            // Crea quote complete
-            let odds = createRealisticOdds(home: homeOdd, draw: drawOdd, away: awayOdd)
-            
-            let match = Match(
-                id: UUID(),
-                home: apiMatch.home_team,
-                away: apiMatch.away_team,
-                time: timeString,
-                odds: odds,
-                result: nil, // Partite future
-                goals: nil,
-                competition: apiMatch.sport_title,
-                status: "UPCOMING",
-                isReal: true,
-                homeLogo: teamLogoURL(for: apiMatch.home_team),
-                awayLogo: teamLogoURL(for: apiMatch.away_team)
-            )
-            
-            convertedMatches.append(match)
-        }
-        
-        // Se non ci sono abbastanza partite, aggiungi realistiche
-        if convertedMatches.count < 8 {
-            let realisticMatches = generateRealisticMatches()
-            convertedMatches.append(contentsOf: realisticMatches.prefix(8 - convertedMatches.count))
-        }
-        
-        // Salva le partite
-        dailyMatches[todayKey] = convertedMatches
-        saveMatches()
-        lastUpdateTime = Date()
-    }
+    // MARK: - MATCH GENERATION FUNCTIONS
     
     private func generateRealisticMatches() -> [Match] {
-        var matches: [Match] = []
-        let competitions = Array(realTeams.keys)
+        let competitions = [
+            ("Premier League", ["Arsenal", "Chelsea", "Liverpool", "Man City", "Man United", "Tottenham"]),
+            ("Serie A", ["Milan", "Inter", "Juventus", "Napoli", "Roma", "Lazio"]),
+            ("La Liga", ["Barcelona", "Real Madrid", "Atletico", "Sevilla", "Valencia", "Villarreal"]),
+            ("Bundesliga", ["Bayern", "Dortmund", "Leipzig", "Leverkusen", "Frankfurt", "Wolfsburg"]),
+            ("Ligue 1", ["PSG", "Marseille", "Lyon", "Monaco", "Lille", "Nice"])
+        ]
         
-        for competition in competitions.prefix(3) {
-            let teams = realTeams[competition] ?? []
-            
-            for _ in 0..<4 {
+        var matches: [Match] = []
+        
+        for (competition, teams) in competitions {
+            for _ in 0..<3 {
                 let home = teams.randomElement()!
                 var away = teams.randomElement()!
                 while away == home { away = teams.randomElement()! }
                 
-                let hour = Int.random(in: 14...22)
+                let hour = Int.random(in: 15...21)
                 let minute = ["00", "15", "30", "45"].randomElement()!
                 let time = "\(hour):\(minute)"
                 
-                // Quote realistiche basate su ranking immaginario
-                let (homeOdd, drawOdd, awayOdd) = generateRealisticOddsForMatch(home: home, away: away, competition: competition)
+                let (homeOdd, drawOdd, awayOdd) = generateRealisticOdds(home: home, away: away)
                 let odds = createRealisticOdds(home: homeOdd, draw: drawOdd, away: awayOdd)
                 
-                // Genera risultato realistico
                 let (result, goals) = generateRealisticResult(homeOdd: homeOdd, drawOdd: drawOdd, awayOdd: awayOdd)
                 
                 let match = Match(
@@ -396,8 +515,9 @@ final class BettingViewModel: ObservableObject {
                     competition: competition,
                     status: "FINISHED",
                     isReal: false,
-                    homeLogo: teamLogoURL(for: home),
-                    awayLogo: teamLogoURL(for: away)
+                    homeLogo: nil,
+                    awayLogo: nil,
+                    actualResult: result == .home ? "2-1" : result == .away ? "0-2" : "1-1"
                 )
                 
                 matches.append(match)
@@ -407,58 +527,42 @@ final class BettingViewModel: ObservableObject {
         return matches.shuffled()
     }
     
-    private func generateRealisticOddsForMatch(home: String, away: String, competition: String) -> (Double, Double, Double) {
-        // Simula quote realistiche basate su "forza" delle squadre
-        let homeStrength = Double(home.hash % 100) / 100.0
-        let awayStrength = Double(away.hash % 100) / 100.0
+    private func generateRealisticOdds(home: String, away: String) -> (Double, Double, Double) {
+        // Simula quote realistiche
+        let diff = Double(home.hash % 100 - away.hash % 100) / 100.0
         
-        let diff = homeStrength - awayStrength
-        
-        // Quote basate sulla differenza di forza
         if diff > 0.3 {
-            // Forte favorito in casa
             return (1.45, 4.50, 7.00)
         } else if diff > 0.1 {
-            // Leggero favorito in casa
             return (1.85, 3.60, 4.20)
         } else if diff > -0.1 {
-            // Partita equilibrata
             return (2.40, 3.30, 2.90)
         } else if diff > -0.3 {
-            // Leggero favorito in trasferta
             return (3.10, 3.40, 2.25)
         } else {
-            // Forte favorito in trasferta
             return (5.50, 4.00, 1.55)
         }
     }
     
     private func generateRealisticResult(homeOdd: Double, drawOdd: Double, awayOdd: Double) -> (MatchOutcome?, Int?) {
-        // Calcola probabilità dalle quote
         let homeProb = 1 / homeOdd
         let drawProb = 1 / drawOdd
         let awayProb = 1 / awayOdd
         let totalProb = homeProb + drawProb + awayProb
         
-        // Normalizza le probabilità
         let normHomeProb = homeProb / totalProb
         let normDrawProb = drawProb / totalProb
-        _ = awayProb / totalProb // Non usato ma calcolato per completezza
         
-        // Genera risultato casuale ma realistico
         let random = Double.random(in: 0...1)
         
         if random < normHomeProb {
-            // Vittoria casa
             let goals = Int.random(in: 1...4)
             let awayGoals = Int.random(in: 0...goals-1)
             return (.home, goals + awayGoals)
         } else if random < normHomeProb + normDrawProb {
-            // Pareggio
             let goals = Int.random(in: 0...3)
             return (.draw, goals * 2)
         } else {
-            // Vittoria trasferta
             let goals = Int.random(in: 1...4)
             let homeGoals = Int.random(in: 0...goals-1)
             return (.away, goals + homeGoals)
@@ -466,12 +570,10 @@ final class BettingViewModel: ObservableObject {
     }
     
     private func createRealisticOdds(home: Double, draw: Double, away: Double) -> Odds {
-        // Crea quote derivate realistiche
         let homeDraw = 1.0 / ((1.0/home) + (1.0/draw))
         let homeAway = 1.0 / ((1.0/home) + (1.0/away))
         let drawAway = 1.0 / ((1.0/draw) + (1.0/away))
         
-        // Quote Over/Under realistiche (valori fissi realistici)
         return Odds(
             home: home,
             draw: draw,
@@ -490,16 +592,6 @@ final class BettingViewModel: ObservableObject {
             over45: 4.50,
             under45: 1.18
         )
-    }
-    
-    private func teamLogoURL(for team: String) -> String {
-        // URL di logo
-        _ = team.lowercased()
-            .replacingOccurrences(of: " ", with: "_")
-            .replacingOccurrences(of: ".", with: "")
-            .replacingOccurrences(of: "'", with: "")
-        
-        return "https://media.api-sports.io/football/teams/\(team.hash % 1000).png"
     }
     
     // MARK: - DATE HELPERS
@@ -526,7 +618,7 @@ final class BettingViewModel: ObservableObject {
         return f.string(from: date)
     }
     
-    // MARK: - MATCH GENERATION (SIMULATE)
+    // MARK: - SIMULATED MATCHES
     
     func generateTodayIfNeeded() {
         let todayKey = keyForDate(Date())
@@ -538,42 +630,7 @@ final class BettingViewModel: ObservableObject {
     }
     
     func generateSimulatedMatches() -> [Match] {
-        var result: [Match] = []
-        
-        for _ in 0..<12 {
-            let competition = realTeams.keys.randomElement() ?? "Serie A"
-            let teams = realTeams[competition] ?? ["Napoli", "Inter"]
-            
-            let home = teams.randomElement()!
-            var away = teams.randomElement()!
-            while away == home { away = teams.randomElement()! }
-            
-            let hour = Int.random(in: 14...22)
-            let minute = ["00", "15", "30", "45"].randomElement()!
-            let time = "\(hour):\(minute)"
-            
-            let (homeOdd, drawOdd, awayOdd) = generateRealisticOddsForMatch(home: home, away: away, competition: competition)
-            let odds = createRealisticOdds(home: homeOdd, draw: drawOdd, away: awayOdd)
-            
-            let (resultOutcome, goals) = generateRealisticResult(homeOdd: homeOdd, drawOdd: drawOdd, awayOdd: awayOdd)
-            
-            result.append(Match(
-                id: UUID(),
-                home: home,
-                away: away,
-                time: time,
-                odds: odds,
-                result: resultOutcome,
-                goals: goals,
-                competition: competition,
-                status: "FINISHED",
-                isReal: false,
-                homeLogo: teamLogoURL(for: home),
-                awayLogo: teamLogoURL(for: away)
-            ))
-        }
-        
-        return result
+        generateRealisticMatches()
     }
     
     func matchesForSelectedDay() -> [String: [Match]] {
@@ -628,7 +685,6 @@ final class BettingViewModel: ObservableObject {
         currentPicks.append(BetPick(id: UUID(), match: match, outcome: outcome, odd: odd))
     }
     
-    // Funzione per determinare la sezione di un outcome
     private func getSectionForOutcome(_ outcome: MatchOutcome) -> String {
         switch outcome {
         case .home, .draw, .away:
@@ -678,7 +734,6 @@ final class BettingViewModel: ObservableObject {
     func evaluateSlip(_ slip: BetSlip) -> BetSlip {
         var updatedSlip = slip
         
-        // già valutata → non tocco saldo né stato
         if slip.isEvaluated { return slip }
         
         let allCorrect = slip.picks.allSatisfy { pick in
@@ -829,7 +884,6 @@ struct ContentView: View {
                     .foregroundColor(.accentCyan)
                     .bold()
                 
-                // Toggle per LIVE/REALI
                 if vm.selectedTab == 0 {
                     Button {
                         vm.toggleRealMatches()
@@ -868,14 +922,12 @@ struct ContentView: View {
                 .scaleEffect(1.5)
                 .tint(.accentCyan)
             
-            Text(vm.useRealMatches ? "Caricando partite reali..." : "Caricando...")
+            Text("Caricando partite da Football-Data.org...")
                 .foregroundColor(.white)
             
-            if vm.useRealMatches {
-                Text("Aggiornamento in tempo reale")
-                    .font(.caption)
-                    .foregroundColor(.gray)
-            }
+            Text("API Key: \(vm.hasAPIKey ? "✅ Configurata" : "❌ Mancante")")
+                .font(.caption)
+                .foregroundColor(.gray)
             
             Spacer()
         }
@@ -886,11 +938,11 @@ struct ContentView: View {
     private func errorView(error: String) -> some View {
         VStack(spacing: 20) {
             Spacer()
-            Image(systemName: "wifi.exclamationmark")
+            Image(systemName: "exclamationmark.triangle")
                 .font(.system(size: 50))
                 .foregroundColor(.orange)
             
-            Text("Connessione limitata")
+            Text("Attenzione")
                 .font(.title2)
                 .foregroundColor(.white)
             
@@ -901,7 +953,7 @@ struct ContentView: View {
             
             Button("Riprova") {
                 if vm.useRealMatches {
-                    vm.loadRealMatchesFromPublicAPI()
+                    vm.fetchRealMatchesFromFootballData()
                 } else {
                     vm.generateTodayIfNeeded()
                 }
@@ -948,21 +1000,20 @@ struct ContentView: View {
             }
             .padding(.horizontal)
             
-            // Info partite
             if vm.useRealMatches {
                 HStack(spacing: 8) {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundColor(.green)
                         .font(.caption)
                     
-                    Text("PARTITE REALI • QUOTE REALISTICHE")
+                    Text("FOOTBALL-DATA.ORG • API LIVE")
                         .font(.caption)
                         .foregroundColor(.green)
                     
                     if let lastUpdate = vm.lastUpdateTime {
                         Text("•")
                             .foregroundColor(.gray)
-                        Text("Aggiornato: \(lastUpdate, style: .time)")
+                        Text("Agg: \(lastUpdate, style: .time)")
                             .font(.caption2)
                             .foregroundColor(.gray)
                     }
@@ -1022,7 +1073,7 @@ struct ContentView: View {
         .transition(.opacity)
         .refreshable {
             if vm.useRealMatches {
-                vm.loadRealMatchesFromPublicAPI()
+                vm.fetchRealMatchesFromFootballData()
             }
         }
     }
@@ -1041,15 +1092,15 @@ struct ContentView: View {
                 .foregroundColor(.white)
             
             Text(vm.useRealMatches ? 
-                 "L'API potrebbe essere temporaneamente non disponibile" :
-                 "Attiva le partite reali per dati più autentici")
+                 "Football-Data.org non ha partite per oggi o API limit raggiunto" :
+                 "Attiva le partite reali per dati autentici")
                 .foregroundColor(.gray)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal)
             
             Button(vm.useRealMatches ? "Ricarica" : "Attiva partite reali") {
                 if vm.useRealMatches {
-                    vm.loadRealMatchesFromPublicAPI()
+                    vm.fetchRealMatchesFromFootballData()
                 } else {
                     vm.useRealMatches = true
                 }
@@ -1065,118 +1116,113 @@ struct ContentView: View {
     
     private func matchCardView(match: Match, disabled: Bool) -> some View {
         Button(action: {
-            // Gestione del tap
+            // Navigation gestito altrove
         }) {
-            matchCardContent(match: match, disabled: disabled)
+            VStack(spacing: 12) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 8) {
+                            if match.isReal {
+                                Circle()
+                                    .fill(Color.green)
+                                    .frame(width: 8, height: 8)
+                            }
+                            
+                            Text(match.home)
+                                .font(.headline)
+                                .foregroundColor(disabled ? .gray : .white)
+                                .lineLimit(1)
+                        }
+                        
+                        Text(match.competition)
+                            .font(.caption2)
+                            .foregroundColor(.accentCyan)
+                    }
+                    
+                    Spacer()
+                    
+                    VStack(alignment: .trailing, spacing: 4) {
+                        HStack(spacing: 8) {
+                            Text(match.away)
+                                .font(.headline)
+                                .foregroundColor(disabled ? .gray : .white)
+                                .lineLimit(1)
+                            
+                            if match.isReal {
+                                Circle()
+                                    .fill(Color.green)
+                                    .frame(width: 8, height: 8)
+                            }
+                        }
+                        
+                        if let actualResult = match.actualResult {
+                            Text(actualResult)
+                                .font(.caption2)
+                                .foregroundColor(.green)
+                        } else {
+                            Text(match.status)
+                                .font(.caption2)
+                                .foregroundColor(match.status == "FINISHED" ? .green : .orange)
+                        }
+                    }
+                }
+                
+                HStack(spacing: 0) {
+                    VStack(spacing: 4) {
+                        Text("1")
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                        Text("\(match.odds.home, specifier: "%.2f")")
+                            .font(.system(.body, design: .monospaced).bold())
+                            .foregroundColor(match.isReal ? .green : .white)
+                    }
+                    .frame(maxWidth: .infinity)
+                    
+                    Divider()
+                        .frame(height: 30)
+                        .background(Color.gray.opacity(0.3))
+                    
+                    VStack(spacing: 4) {
+                        Text("X")
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                        Text("\(match.odds.draw, specifier: "%.2f")")
+                            .font(.system(.body, design: .monospaced).bold())
+                            .foregroundColor(match.isReal ? .green : .white)
+                    }
+                    .frame(maxWidth: .infinity)
+                    
+                    Divider()
+                        .frame(height: 30)
+                        .background(Color.gray.opacity(0.3))
+                    
+                    VStack(spacing: 4) {
+                        Text("2")
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                        Text("\(match.odds.away, specifier: "%.2f")")
+                            .font(.system(.body, design: .monospaced).bold())
+                            .foregroundColor(match.isReal ? .green : .white)
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+                .padding(.horizontal, 10)
+            }
+            .padding()
+            .background(
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(disabled ? Color.gray.opacity(0.1) : Color.white.opacity(0.06))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16)
+                            .stroke(
+                                disabled ? Color.gray.opacity(0.2) : 
+                                (match.isReal ? Color.green.opacity(0.4) : Color.white.opacity(0.1)),
+                                lineWidth: match.isReal ? 2 : 1
+                            )
+                    )
+            )
         }
         .buttonStyle(PlainButtonStyle())
-    }
-    
-    private func matchCardContent(match: Match, disabled: Bool) -> some View {
-        VStack(spacing: 12) {
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 8) {
-                        if match.isReal {
-                            Circle()
-                                .fill(Color.green)
-                                .frame(width: 8, height: 8)
-                        }
-                        
-                        Text(match.home)
-                            .font(.headline)
-                            .foregroundColor(disabled ? .gray : .white)
-                            .lineLimit(1)
-                    }
-                    
-                    Text(match.competition)
-                        .font(.caption2)
-                        .foregroundColor(.accentCyan)
-                }
-                
-                Spacer()
-                
-                VStack(alignment: .trailing, spacing: 4) {
-                    HStack(spacing: 8) {
-                        Text(match.away)
-                            .font(.headline)
-                            .foregroundColor(disabled ? .gray : .white)
-                            .lineLimit(1)
-                        
-                        if match.isReal {
-                            Circle()
-                                .fill(Color.green)
-                                .frame(width: 8, height: 8)
-                        }
-                    }
-                    
-                    Text(match.status)
-                        .font(.caption2)
-                        .foregroundColor(match.status == "FINISHED" ? .green : .orange)
-                }
-            }
-            
-            // Quote principali
-            HStack(spacing: 0) {
-                VStack(spacing: 4) {
-                    Text("1")
-                        .font(.caption)
-                        .foregroundColor(.gray)
-                    Text("\(match.odds.home, specifier: "%.2f")")
-                        .font(.system(.body, design: .monospaced).bold())
-                        .foregroundColor(match.isReal ? .green : .white)
-                }
-                .frame(maxWidth: .infinity)
-                
-                Divider()
-                    .frame(height: 30)
-                    .background(Color.gray.opacity(0.3))
-                
-                VStack(spacing: 4) {
-                    Text("X")
-                        .font(.caption)
-                        .foregroundColor(.gray)
-                    Text("\(match.odds.draw, specifier: "%.2f")")
-                        .font(.system(.body, design: .monospaced).bold())
-                        .foregroundColor(match.isReal ? .green : .white)
-                }
-                .frame(maxWidth: .infinity)
-                
-                Divider()
-                    .frame(height: 30)
-                    .background(Color.gray.opacity(0.3))
-                
-                VStack(spacing: 4) {
-                    Text("2")
-                        .font(.caption)
-                        .foregroundColor(.gray)
-                    Text("\(match.odds.away, specifier: "%.2f")")
-                        .font(.system(.body, design: .monospaced).bold())
-                        .foregroundColor(match.isReal ? .green : .white)
-                }
-                .frame(maxWidth: .infinity)
-            }
-            .padding(.horizontal, 10)
-        }
-        .padding()
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(disabled ? Color.gray.opacity(0.1) : Color.white.opacity(0.06))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16)
-                        .stroke(
-                            disabled ? Color.gray.opacity(0.2) : 
-                            (match.isReal ? Color.green.opacity(0.4) : Color.white.opacity(0.1)),
-                            lineWidth: match.isReal ? 2 : 1
-                        )
-                )
-        )
-        .overlay(
-            match.isReal ?
-            RoundedRectangle(cornerRadius: 16)
-                .stroke(Color.green.opacity(0.2), lineWidth: 1)
-                .blur(radius: 2) : nil
-        )
     }
     
     // MARK: PLACED BETS
@@ -1266,43 +1312,47 @@ struct ContentView: View {
                 .shadow(color: .black.opacity(0.25), radius: 10, y: -2)
             
             HStack(spacing: 50) {
-                bottomItemView(icon: "calendar", index: 0)
-                bottomItemView(icon: "dice.fill", index: 1)
-                bottomItemView(icon: "list.bullet", index: 2)
-                bottomItemView(icon: "person.crop.circle", index: 3)
+                ForEach(0..<4) { index in
+                    bottomItemView(index: index)
+                }
             }
         }
         .padding(.bottom, 8)
     }
     
-    private func bottomItemView(icon: String, index: Int) -> some View {
-        Button {
+    private func bottomItemView(index: Int) -> some View {
+        let icon: String
+        switch index {
+        case 0: icon = "calendar"
+        case 1: icon = "dice.fill"
+        case 2: icon = "list.bullet"
+        case 3: icon = "person.crop.circle"
+        default: icon = "circle"
+        }
+        
+        return Button {
             withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
                 vm.selectedTab = index
             }
         } label: {
             VStack(spacing: 6) {
-                
                 ZStack {
                     if vm.selectedTab == index {
                         Circle()
                             .fill(Color.accentCyan.opacity(0.25))
                             .frame(width: 44, height: 44)
-                            .transition(.scale.combined(with: .opacity))
                     }
                     
                     Image(systemName: icon)
                         .font(.system(size: 20, weight: .semibold))
                         .foregroundColor(vm.selectedTab == index ? .accentCyan : .white.opacity(0.7))
-                        .scaleEffect(vm.selectedTab == index ? 1.15 : 1.0)
-                        .animation(.spring(response: 0.3, dampingFraction: 0.6), value: vm.selectedTab)
                 }
                 
                 if vm.selectedTab == index {
                     Capsule()
                         .fill(Color.accentCyan)
                         .frame(width: 22, height: 4)
-                        .matchedGeometryEffect(id: "tabIndicator", in: animationNamespace)
+                        .matchedGeometryEffect(id: "tab", in: animationNamespace)
                 } else {
                     Capsule()
                         .fill(Color.clear)
