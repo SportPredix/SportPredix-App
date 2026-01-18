@@ -74,7 +74,7 @@ struct ProfileView: View {
         .alert("SportPredix Info", isPresented: $showAppInfoAlert) {
             Button("OK", role: .cancel) { }
         } message: {
-            Text("Versione 1.0\nSviluppato per dimostrazione\n© 2024 SportPredix")
+            Text("Versione 1.0\nSviluppato da Formatiks\n© 2026 SportPredix")
         }
         .sheet(isPresented: $showPreferences) {
             PreferencesView()

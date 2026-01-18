@@ -7,28 +7,32 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		1348E93C2F1A99D500FC3904 /* PreferencesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1348E93B2F1A99D500FC3904 /* PreferencesView.swift */; };
-		1348E93E2F1A9A0800FC3904 /* ProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1348E93D2F1A9A0800FC3904 /* ProfileView.swift */; };
-		1348E9402F1A9A3D00FC3904 /* MatchDetailsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1348E93F2F1A9A3D00FC3904 /* MatchDetailsView.swift */; };
-		1348E9422F1A9A6500FC3904 /* SlipDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1348E9412F1A9A6500FC3904 /* SlipDetailView.swift */; };
-		1348E9442F1A9A8F00FC3904 /* BetSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1348E9432F1A9A8F00FC3904 /* BetSheet.swift */; };
-		1348E9462F1A9AC100FC3904 /* GameView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1348E9452F1A9AC100FC3904 /* GameView.swift */; };
-		136C9E752F156C29006386A3 /* SportPredixApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 136C9E742F156C29006386A3 /* SportPredixApp.swift */; };
-		136C9E772F156C29006386A3 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 136C9E762F156C29006386A3 /* ContentView.swift */; };
+		1300489B2F1D28A80085CC1A /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 130048992F1D28A80085CC1A /* Models.swift */; };
+		1300489C2F1D28A80085CC1A /* OddsService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1300489A2F1D28A80085CC1A /* OddsService.swift */; };
+		130048A52F1D28B90085CC1A /* BetSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1300489D2F1D28B70085CC1A /* BetSheet.swift */; };
+		130048A62F1D28B90085CC1A /* ProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1300489E2F1D28B70085CC1A /* ProfileView.swift */; };
+		130048A72F1D28B90085CC1A /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1300489F2F1D28B80085CC1A /* ContentView.swift */; };
+		130048A82F1D28B90085CC1A /* PreferencesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 130048A02F1D28B80085CC1A /* PreferencesView.swift */; };
+		130048A92F1D28B90085CC1A /* SlipDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 130048A12F1D28B80085CC1A /* SlipDetailView.swift */; };
+		130048AA2F1D28B90085CC1A /* SportPredixApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 130048A22F1D28B80085CC1A /* SportPredixApp.swift */; };
+		130048AB2F1D28B90085CC1A /* MatchDetailsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 130048A32F1D28B80085CC1A /* MatchDetailsView.swift */; };
+		130048AC2F1D28B90085CC1A /* GameView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 130048A42F1D28B90085CC1A /* GameView.swift */; };
 		136C9E792F156C32006386A3 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 136C9E782F156C32006386A3 /* Assets.xcassets */; };
 		136C9E7C2F156C32006386A3 /* Preview Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 136C9E7B2F156C32006386A3 /* Preview Assets.xcassets */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		1348E93B2F1A99D500FC3904 /* PreferencesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreferencesView.swift; sourceTree = "<group>"; };
-		1348E93D2F1A9A0800FC3904 /* ProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileView.swift; sourceTree = "<group>"; };
-		1348E93F2F1A9A3D00FC3904 /* MatchDetailsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MatchDetailsView.swift; sourceTree = "<group>"; };
-		1348E9412F1A9A6500FC3904 /* SlipDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SlipDetailView.swift; sourceTree = "<group>"; };
-		1348E9432F1A9A8F00FC3904 /* BetSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BetSheet.swift; sourceTree = "<group>"; };
-		1348E9452F1A9AC100FC3904 /* GameView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameView.swift; sourceTree = "<group>"; };
+		130048992F1D28A80085CC1A /* Models.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
+		1300489A2F1D28A80085CC1A /* OddsService.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = OddsService.swift; sourceTree = "<group>"; };
+		1300489D2F1D28B70085CC1A /* BetSheet.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = BetSheet.swift; sourceTree = "<group>"; };
+		1300489E2F1D28B70085CC1A /* ProfileView.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = ProfileView.swift; sourceTree = "<group>"; };
+		1300489F2F1D28B80085CC1A /* ContentView.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		130048A02F1D28B80085CC1A /* PreferencesView.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = PreferencesView.swift; sourceTree = "<group>"; };
+		130048A12F1D28B80085CC1A /* SlipDetailView.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = SlipDetailView.swift; sourceTree = "<group>"; };
+		130048A22F1D28B80085CC1A /* SportPredixApp.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = SportPredixApp.swift; sourceTree = "<group>"; };
+		130048A32F1D28B80085CC1A /* MatchDetailsView.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = MatchDetailsView.swift; sourceTree = "<group>"; };
+		130048A42F1D28B90085CC1A /* GameView.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = GameView.swift; sourceTree = "<group>"; };
 		136C9E712F156C29006386A3 /* SportPredix.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SportPredix.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		136C9E742F156C29006386A3 /* SportPredixApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SportPredixApp.swift; sourceTree = "<group>"; };
-		136C9E762F156C29006386A3 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		136C9E782F156C32006386A3 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		136C9E7B2F156C32006386A3 /* Preview Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = "Preview Assets.xcassets"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -63,16 +67,18 @@
 		136C9E732F156C29006386A3 /* SportPredix */ = {
 			isa = PBXGroup;
 			children = (
-				136C9E742F156C29006386A3 /* SportPredixApp.swift */,
-				136C9E762F156C29006386A3 /* ContentView.swift */,
+				130048992F1D28A80085CC1A /* Models.swift */,
+				1300489A2F1D28A80085CC1A /* OddsService.swift */,
+				1300489D2F1D28B70085CC1A /* BetSheet.swift */,
+				1300489F2F1D28B80085CC1A /* ContentView.swift */,
+				130048A42F1D28B90085CC1A /* GameView.swift */,
+				130048A32F1D28B80085CC1A /* MatchDetailsView.swift */,
+				130048A02F1D28B80085CC1A /* PreferencesView.swift */,
+				1300489E2F1D28B70085CC1A /* ProfileView.swift */,
+				130048A12F1D28B80085CC1A /* SlipDetailView.swift */,
+				130048A22F1D28B80085CC1A /* SportPredixApp.swift */,
 				136C9E782F156C32006386A3 /* Assets.xcassets */,
 				136C9E7A2F156C32006386A3 /* Preview Content */,
-				1348E93B2F1A99D500FC3904 /* PreferencesView.swift */,
-				1348E93D2F1A9A0800FC3904 /* ProfileView.swift */,
-				1348E93F2F1A9A3D00FC3904 /* MatchDetailsView.swift */,
-				1348E9412F1A9A6500FC3904 /* SlipDetailView.swift */,
-				1348E9432F1A9A8F00FC3904 /* BetSheet.swift */,
-				1348E9452F1A9AC100FC3904 /* GameView.swift */,
 			);
 			path = SportPredix;
 			sourceTree = "<group>";
@@ -155,14 +161,16 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				1348E9442F1A9A8F00FC3904 /* BetSheet.swift in Sources */,
-				1348E93E2F1A9A0800FC3904 /* ProfileView.swift in Sources */,
-				136C9E772F156C29006386A3 /* ContentView.swift in Sources */,
-				1348E93C2F1A99D500FC3904 /* PreferencesView.swift in Sources */,
-				1348E9402F1A9A3D00FC3904 /* MatchDetailsView.swift in Sources */,
-				136C9E752F156C29006386A3 /* SportPredixApp.swift in Sources */,
-				1348E9462F1A9AC100FC3904 /* GameView.swift in Sources */,
-				1348E9422F1A9A6500FC3904 /* SlipDetailView.swift in Sources */,
+				130048AB2F1D28B90085CC1A /* MatchDetailsView.swift in Sources */,
+				130048A62F1D28B90085CC1A /* ProfileView.swift in Sources */,
+				130048A82F1D28B90085CC1A /* PreferencesView.swift in Sources */,
+				130048A92F1D28B90085CC1A /* SlipDetailView.swift in Sources */,
+				130048AC2F1D28B90085CC1A /* GameView.swift in Sources */,
+				130048A72F1D28B90085CC1A /* ContentView.swift in Sources */,
+				130048AA2F1D28B90085CC1A /* SportPredixApp.swift in Sources */,
+				1300489C2F1D28A80085CC1A /* OddsService.swift in Sources */,
+				1300489B2F1D28A80085CC1A /* Models.swift in Sources */,
+				130048A52F1D28B90085CC1A /* BetSheet.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -296,6 +304,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "\"SportPredix/Preview Content\"";
+				DEVELOPMENT_TEAM = "";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -324,6 +333,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "\"SportPredix/Preview Content\"";
+				DEVELOPMENT_TEAM = "";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
