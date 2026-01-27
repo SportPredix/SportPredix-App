@@ -565,7 +565,7 @@ final class BettingViewModel: ObservableObject {
             case .over15:
                 return (pick.match.goals ?? 0) > 1
             case .under15:
-                return (pick.match.goals ?? 0) <= 1  // CORRETTO: ?? 0 invece di || 0
+                return (pick.match.goals ?? 0) <= 1
             case .over25:
                 return (pick.match.goals ?? 0) > 2
             case .under25:
@@ -628,7 +628,7 @@ final class BettingViewModel: ObservableObject {
     }
 }
 
-// MARK: - MAIN VIEW (PULITO, CON BETSTACK)
+// MARK: - MAIN VIEW
 
 struct ContentView: View {
     
@@ -733,7 +733,7 @@ struct ContentView: View {
         }
         .padding()
         .overlay(
-            // Menu sport dropdown (stesso stile della toolbar)
+            // Menu sport dropdown (piccolo come prima, con meno trasparenza)
             Group {
                 if vm.showSportPicker && vm.selectedTab == 0 {
                     VStack(spacing: 0) {
@@ -753,13 +753,10 @@ struct ContentView: View {
                                 }
                             }
                             .padding(.horizontal, 16)
-                            .padding(.vertical, 14)
-                            .frame(width: 180)
+                            .padding(.vertical, 12)
+                            .frame(width: 150)
                         }
-                        .background(vm.selectedSport == "Calcio" ? Color.accentCyan.opacity(0.15) : Color.clear)
-                        
-                        Divider()
-                            .background(Color.gray.opacity(0.3))
+                        .background(vm.selectedSport == "Calcio" ? Color.accentCyan.opacity(0.2) : Color.clear)
                         
                         Button {
                             vm.selectedSport = "Tennis"
@@ -777,21 +774,35 @@ struct ContentView: View {
                                 }
                             }
                             .padding(.horizontal, 16)
-                            .padding(.vertical, 14)
-                            .frame(width: 180)
+                            .padding(.vertical, 12)
+                            .frame(width: 150)
                         }
-                        .background(vm.selectedSport == "Tennis" ? Color.accentCyan.opacity(0.15) : Color.clear)
+                        .background(vm.selectedSport == "Tennis" ? Color.accentCyan.opacity(0.2) : Color.clear)
+                        
+                        Divider()
+                            .background(Color.gray.opacity(0.3))
+                            .padding(.horizontal, 8)
+                        
+                        Button {
+                            vm.showSportPicker = false
+                        } label: {
+                            Text("Chiudi")
+                                .foregroundColor(.accentCyan)
+                                .font(.caption)
+                                .padding(.vertical, 8)
+                                .frame(width: 150)
+                        }
                     }
                     .background(
-                        RoundedRectangle(cornerRadius: 16)
-                            .fill(Color(red: 0.1, green: 0.1, blue: 0.1))
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(Color(red: 0.15, green: 0.15, blue: 0.15)) // MENO TRASPARENZA
                             .overlay(
-                                RoundedRectangle(cornerRadius: 16)
-                                    .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                                RoundedRectangle(cornerRadius: 12)
+                                    .stroke(Color.accentCyan.opacity(0.3), lineWidth: 1)
                             )
-                            .shadow(color: .black.opacity(0.5), radius: 20, x: 0, y: 10)
+                            .shadow(color: .black.opacity(0.5), radius: 10, x: 0, y: 5)
                     )
-                    .offset(y: 70)
+                    .offset(y: 60)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.leading, 16)
                     .zIndex(1000)
