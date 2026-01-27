@@ -20,6 +20,8 @@ final class BettingViewModel: ObservableObject {
     @Published var selectedSport: String {
         didSet {
             UserDefaults.standard.set(selectedSport, forKey: "selectedSport")
+            // Quando cambia sport, ricarica le partite
+            generateTodayIfNeeded()
         }
     }
     
@@ -163,7 +165,7 @@ final class BettingViewModel: ObservableObject {
         let todayKey = keyForDate(Date())
         
         if dailyMatches[todayKey] == nil {
-            print("🔄 Generating simulated matches for today")
+            print("🔄 Generating simulated matches for \(selectedSport)")
             
             if selectedSport == "Tennis" {
                 dailyMatches[todayKey] = generateTennisMatches()
@@ -172,16 +174,7 @@ final class BettingViewModel: ObservableObject {
             }
             
             saveMatches()
-        }
-    }
-    
-    func generateTennisMatchesIfNeeded() {
-        let todayKey = keyForDate(Date())
-        
-        if dailyMatches[todayKey] == nil {
-            print("🔄 Generating tennis matches")
-            dailyMatches[todayKey] = generateTennisMatches()
-            saveMatches()
+            objectWillChange.send() // Forza aggiornamento UI
         }
     }
     
@@ -411,11 +404,7 @@ final class BettingViewModel: ObservableObject {
         
         // Se è oggi, genera partite
         if Calendar.current.isDateInToday(date) {
-            if selectedSport == "Calcio" {
-                fetchMatchesFromBetstack()
-            } else {
-                generateTennisMatchesIfNeeded()
-            }
+            generateTodayIfNeeded()
         }
         
         let newMatches = selectedSport == "Calcio" ? generateFootballMatches() : generateTennisMatches()
@@ -626,15 +615,6 @@ struct ContentView: View {
                 }
                 
                 floatingButtonView
-                
-                // Overlay per chiudere menu sport quando si tocca fuori
-                if vm.showSportPicker {
-                    Color.clear
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            vm.showSportPicker = false
-                        }
-                }
             }
             .sheet(isPresented: $vm.showSheet) {
                 BetSheet(
@@ -644,6 +624,12 @@ struct ContentView: View {
                 ) { stake in vm.confirmSlip(stake: stake) }
             }
             .sheet(item: $vm.showSlipDetail) { SlipDetailView(slip: $0) }
+            .onTapGesture {
+                // Chiudi il menu sport se aperto
+                if vm.showSportPicker {
+                    vm.showSportPicker = false
+                }
+            }
         }
     }
     
@@ -659,21 +645,16 @@ struct ContentView: View {
                             .font(.largeTitle.bold())
                             .foregroundColor(.white)
                         
+                        // Freccia bianca senza nome sport affianco
                         Button(action: {
                             // Mostra/nascondi menu sport
                             vm.showSportPicker.toggle()
                         }) {
                             Image(systemName: "chevron.down")
-                                .foregroundColor(.accentCyan)
+                                .foregroundColor(.white)
                                 .rotationEffect(.degrees(vm.showSportPicker ? 180 : 0))
                                 .animation(.easeInOut(duration: 0.3), value: vm.showSportPicker)
                         }
-                        
-                        // Mostra il nome dello sport selezionato
-                        Text(vm.selectedSport)
-                            .font(.title3)
-                            .foregroundColor(.accentCyan)
-                            .padding(.leading, 8)
                     }
                     
                     if vm.selectedTab == 0 && vm.lastUpdateTime != nil {
@@ -689,23 +670,6 @@ struct ContentView: View {
                     Text("€\(vm.balance, specifier: "%.2f")")
                         .foregroundColor(.accentCyan)
                         .bold()
-                    
-                    if vm.selectedTab == 0 {
-                        Button(action: {
-                            if vm.selectedSport == "Calcio" {
-                                vm.fetchMatchesFromBetstack()
-                            } else {
-                                // Per tennis, ricarica le partite simulate
-                                vm.generateTennisMatchesIfNeeded()
-                                vm.objectWillChange.send()
-                            }
-                        }) {
-                            Image(systemName: "arrow.clockwise")
-                                .foregroundColor(.accentCyan)
-                                .font(.system(size: 16))
-                        }
-                        .disabled(vm.isLoading)
-                    }
                 }
             } else {
                 // Header standard per altre tab
@@ -734,7 +698,6 @@ struct ContentView: View {
                         Button {
                             vm.selectedSport = "Calcio"
                             vm.showSportPicker = false
-                            vm.fetchMatchesFromBetstack()
                         } label: {
                             HStack {
                                 Image(systemName: "soccerball")
@@ -749,14 +712,13 @@ struct ContentView: View {
                             }
                             .padding(.horizontal, 16)
                             .padding(.vertical, 12)
-                            .frame(width: 200)
+                            .frame(width: 180)
                         }
                         .background(vm.selectedSport == "Calcio" ? Color.accentCyan.opacity(0.2) : Color.black.opacity(0.95))
                         
                         Button {
                             vm.selectedSport = "Tennis"
                             vm.showSportPicker = false
-                            vm.generateTennisMatchesIfNeeded()
                         } label: {
                             HStack {
                                 Image(systemName: "tennis.racket")
@@ -771,7 +733,7 @@ struct ContentView: View {
                             }
                             .padding(.horizontal, 16)
                             .padding(.vertical, 12)
-                            .frame(width: 200)
+                            .frame(width: 180)
                         }
                         .background(vm.selectedSport == "Tennis" ? Color.accentCyan.opacity(0.2) : Color.black.opacity(0.95))
                     }
@@ -787,6 +749,7 @@ struct ContentView: View {
                     .offset(y: 60)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.leading, 16)
+                    .zIndex(1000)
                     .transition(.opacity.combined(with: .move(edge: .top)))
                 }
             },
@@ -886,16 +849,6 @@ struct ContentView: View {
         }
         .id("\(vm.selectedDayIndex)-\(vm.selectedSport)") // Aggiorna quando cambia sport
         .transition(.opacity)
-        .refreshable {
-            if vm.selectedTab == 0 && vm.selectedDayIndex == 1 { // Solo per oggi
-                if vm.selectedSport == "Calcio" {
-                    vm.fetchMatchesFromBetstack()
-                } else {
-                    vm.generateTennisMatchesIfNeeded()
-                    vm.objectWillChange.send()
-                }
-            }
-        }
     }
     
     private var emptyMatchesView: some View {
@@ -911,23 +864,10 @@ struct ContentView: View {
                 .font(.title2)
                 .foregroundColor(.white)
             
-            Text("Premi il pulsante di aggiornamento per caricare nuove partite")
+            Text("Torna più tardi per vedere nuove partite")
                 .foregroundColor(.gray)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal)
-            
-            Button("Aggiorna") {
-                if vm.selectedSport == "Calcio" {
-                    vm.fetchMatchesFromBetstack()
-                } else {
-                    vm.generateTennisMatchesIfNeeded()
-                    vm.objectWillChange.send()
-                }
-            }
-            .padding()
-            .background(Color.accentCyan)
-            .foregroundColor(.black)
-            .cornerRadius(12)
             
             Spacer()
         }
