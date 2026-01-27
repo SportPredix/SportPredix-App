@@ -10,13 +10,20 @@ import SwiftUI
 extension Color {
     static let accentCyan = Color(red: 68/255, green: 224/255, blue: 203/255)
 }
+
 // MARK: - VIEW MODEL CON BETSTACK INTEGRATION
 
 final class BettingViewModel: ObservableObject {
     
     @Published var selectedTab = 0
     @Published var selectedDayIndex = 1
+    @Published var selectedSport: String {
+        didSet {
+            UserDefaults.standard.set(selectedSport, forKey: "selectedSport")
+        }
+    }
     
+    @Published var showSportPicker = false
     @Published var showSheet = false
     @Published var showSlipDetail: BetSlip?
     
@@ -56,6 +63,9 @@ final class BettingViewModel: ObservableObject {
         self.notificationsEnabled = UserDefaults.standard.object(forKey: "notificationsEnabled") as? Bool ?? true
         self.privacyEnabled = UserDefaults.standard.object(forKey: "privacyEnabled") as? Bool ?? false
         
+        // Carica sport selezionato o imposta "Calcio" come default
+        self.selectedSport = UserDefaults.standard.string(forKey: "selectedSport") ?? "Calcio"
+        
         self.slips = loadSlips()
         self.dailyMatches = loadMatches()
         
@@ -71,20 +81,26 @@ final class BettingViewModel: ObservableObject {
     // MARK: - BETSTACK API INTEGRATION
     
     func checkAndFetchMatches() {
+        // Se non è calcio, usa partite simulate per tennis
+        guard selectedSport == "Calcio" else {
+            generateTodayIfNeeded()
+            return
+        }
+        
         let todayKey = keyForDate(Date())
         
         // Se non abbiamo partite per oggi O l'ultimo fetch è stato più di 1 ora fa
-        let shouldFetch = dailyMatches[todayKey] == nil || 
-                         lastUpdateTime == nil || 
+        let shouldFetch = dailyMatches[todayKey] == nil ||
+                         lastUpdateTime == nil ||
                          Date().timeIntervalSince(lastUpdateTime!) > 3600
         
         if shouldFetch {
-            fetchMatchesFromBetstack()
+            fetchMatchesFromBetstack(for: selectedSport)
         }
     }
     
-    func fetchMatchesFromBetstack() {
-        guard !isLoading else { return }
+    func fetchMatchesFromBetstack(for sport: String) {
+        guard !isLoading, sport == "Calcio" else { return }
         
         isLoading = true
         
@@ -148,12 +164,28 @@ final class BettingViewModel: ObservableObject {
         
         if dailyMatches[todayKey] == nil {
             print("🔄 Generating simulated matches for today")
-            dailyMatches[todayKey] = generateSimulatedMatches()
+            
+            if selectedSport == "Tennis" {
+                dailyMatches[todayKey] = generateTennisMatches()
+            } else {
+                dailyMatches[todayKey] = generateFootballMatches()
+            }
+            
             saveMatches()
         }
     }
     
-    func generateSimulatedMatches() -> [Match] {
+    func generateTennisMatchesIfNeeded() {
+        let todayKey = keyForDate(Date())
+        
+        if dailyMatches[todayKey] == nil {
+            print("🔄 Generating tennis matches")
+            dailyMatches[todayKey] = generateTennisMatches()
+            saveMatches()
+        }
+    }
+    
+    func generateFootballMatches() -> [Match] {
         let competitions = [
             ("Serie A", ["Milan", "Inter", "Juventus", "Napoli", "Roma", "Lazio", "Atalanta", "Fiorentina"]),
             ("Premier League", ["Arsenal", "Chelsea", "Liverpool", "Man City", "Man United", "Tottenham"]),
@@ -197,6 +229,109 @@ final class BettingViewModel: ObservableObject {
         }
         
         return matches.shuffled()
+    }
+    
+    func generateTennisMatches() -> [Match] {
+        let tournaments = [
+            ("ATP Australian Open", ["Djokovic", "Alcaraz", "Sinner", "Medvedev", "Zverev", "Rublev"]),
+            ("ATP French Open", ["Nadal", "Djokovic", "Alcaraz", "Tsitsipas", "Ruud", "Rune"]),
+            ("Wimbledon", ["Djokovic", "Alcaraz", "Murray", "Berrettini", "Kyrgios", "Federer"]),
+            ("US Open", ["Djokovic", "Alcaraz", "Medvedev", "Sinner", "Fritz", "Tiafoe"]),
+            ("ATP Masters 1000", ["Djokovic", "Alcaraz", "Sinner", "Medvedev", "Zverev", "Tsitsipas"])
+        ]
+        
+        var matches: [Match] = []
+        
+        for (tournament, players) in tournaments {
+            for _ in 0..<3 {
+                let player1 = players.randomElement()!
+                var player2 = players.randomElement()!
+                while player2 == player1 { player2 = players.randomElement()! }
+                
+                let hour = Int.random(in: 10...22)
+                let minute = ["00", "15", "30", "45"].randomElement()!
+                let time = "\(hour):\(minute)"
+                
+                // Per il tennis, usiamo solo home/away (senza pareggio)
+                let (homeOdd, _, awayOdd) = generateRealisticTennisOdds(player1: player1, player2: player2)
+                let odds = createTennisOdds(home: homeOdd, away: awayOdd)
+                
+                // Per il tennis, generiamo un risultato realistico
+                let (result, sets) = generateTennisResult(homeOdd: homeOdd, awayOdd: awayOdd)
+                
+                let match = Match(
+                    id: UUID(),
+                    home: player1,
+                    away: player2,
+                    time: time,
+                    odds: odds,
+                    result: result,
+                    goals: sets, // Usiamo goals per indicare i set giocati
+                    competition: tournament,
+                    status: "FINISHED",
+                    actualResult: result == .home ? "3-1" : result == .away ? "2-3" : "N/A"
+                )
+                
+                matches.append(match)
+            }
+        }
+        
+        return matches.shuffled()
+    }
+    
+    private func generateRealisticTennisOdds(player1: String, player2: String) -> (Double, Double, Double) {
+        let diff = Double(player1.hash % 100 - player2.hash % 100) / 100.0
+        
+        if diff > 0.3 {
+            return (1.30, 0.0, 3.50) // Forte favorito
+        } else if diff > 0.1 {
+            return (1.60, 0.0, 2.40)
+        } else if diff > -0.1 {
+            return (1.90, 0.0, 1.90) // Partita equilibrata
+        } else if diff > -0.3 {
+            return (2.40, 0.0, 1.60)
+        } else {
+            return (3.50, 0.0, 1.30) // Forte favorito
+        }
+    }
+    
+    private func createTennisOdds(home: Double, away: Double) -> Odds {
+        return Odds(
+            home: home,
+            draw: 1.0, // Non usato nel tennis
+            away: away,
+            homeDraw: 1.0 / ((1.0/home) + (1.0/1.0)),
+            homeAway: 1.0 / ((1.0/home) + (1.0/away)),
+            drawAway: 1.0 / ((1.0/1.0) + (1.0/away)),
+            over05: 1.12,
+            under05: 6.50,
+            over15: 1.45,
+            under15: 2.65,
+            over25: 1.95,
+            under25: 1.85,
+            over35: 2.80,
+            under35: 1.40,
+            over45: 4.50,
+            under45: 1.18
+        )
+    }
+    
+    private func generateTennisResult(homeOdd: Double, awayOdd: Double) -> (MatchOutcome?, Int?) {
+        let homeProb = 1 / homeOdd
+        let awayProb = 1 / awayOdd
+        let totalProb = homeProb + awayProb
+        
+        let normHomeProb = homeProb / totalProb
+        
+        let random = Double.random(in: 0...1)
+        
+        if random < normHomeProb {
+            let sets = Int.random(in: 3...5) // 3-0, 3-1, 3-2
+            return (.home, sets)
+        } else {
+            let sets = Int.random(in: 3...5) // 3-0, 3-1, 3-2
+            return (.away, sets)
+        }
     }
     
     private func createRealisticOdds(home: Double, draw: Double, away: Double) -> Odds {
@@ -274,12 +409,16 @@ final class BettingViewModel: ObservableObject {
             return grouped
         }
         
-        // Se è oggi, prova a fetchare da Betstack
+        // Se è oggi, genera partite
         if Calendar.current.isDateInToday(date) {
-            fetchMatchesFromBetstack()
+            if selectedSport == "Calcio" {
+                fetchMatchesFromBetstack(for: selectedSport)
+            } else {
+                generateTennisMatchesIfNeeded()
+            }
         }
         
-        let newMatches = generateSimulatedMatches()
+        let newMatches = selectedSport == "Calcio" ? generateFootballMatches() : generateTennisMatches()
         dailyMatches[key] = newMatches
         saveMatches()
         let grouped = Dictionary(grouping: newMatches) { $0.time }
@@ -455,6 +594,7 @@ struct ContentView: View {
     
     @StateObject private var vm = BettingViewModel()
     @Namespace private var animationNamespace
+    @State private var showSportMenu = false
     
     var body: some View {
         NavigationView {
@@ -487,6 +627,15 @@ struct ContentView: View {
                 }
                 
                 floatingButtonView
+                
+                // Overlay per chiudere menu sport quando si tocca fuori
+                if vm.showSportPicker {
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            vm.showSportPicker = false
+                        }
+                }
             }
             .sheet(isPresented: $vm.showSheet) {
                 BetSheet(
@@ -503,40 +652,148 @@ struct ContentView: View {
     
     private var headerView: some View {
         HStack {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(vm.selectedTab == 0 ? "Calendario" :
-                        vm.selectedTab == 1 ? "Giochi" :
-                        vm.selectedTab == 2 ? "Piazzate" : "Profilo")
-                .font(.largeTitle.bold())
-                .foregroundColor(.white)
-                
-                if vm.selectedTab == 0 && vm.lastUpdateTime != nil {
-                    Text("Ultimo aggiornamento: \(formattedUpdateTime)")
-                        .font(.caption)
-                        .foregroundColor(.gray)
-                }
-            }
-            
-            Spacer()
-            
-            VStack(alignment: .trailing, spacing: 4) {
-                Text("€\(vm.balance, specifier: "%.2f")")
-                    .foregroundColor(.accentCyan)
-                    .bold()
-                
-                if vm.selectedTab == 0 {
-                    Button(action: {
-                        vm.fetchMatchesFromBetstack()
-                    }) {
-                        Image(systemName: "arrow.clockwise")
+            if vm.selectedTab == 0 {
+                // Header con selettore sport per la tab Calendario
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 8) {
+                        Text("Sport")
+                            .font(.largeTitle.bold())
+                            .foregroundColor(.white)
+                        
+                        Button(action: {
+                            // Mostra/nascondi menu sport
+                            vm.showSportPicker.toggle()
+                        }) {
+                            Image(systemName: "chevron.down")
+                                .foregroundColor(.accentCyan)
+                                .rotationEffect(.degrees(vm.showSportPicker ? 180 : 0))
+                                .animation(.easeInOut(duration: 0.3), value: vm.showSportPicker)
+                        }
+                        
+                        // Mostra il nome dello sport selezionato
+                        Text(vm.selectedSport)
+                            .font(.title3)
                             .foregroundColor(.accentCyan)
-                            .font(.system(size: 16))
+                            .padding(.leading, 8)
                     }
-                    .disabled(vm.isLoading)
+                    
+                    if vm.selectedTab == 0 && vm.lastUpdateTime != nil {
+                        Text("Ultimo aggiornamento: \(formattedUpdateTime)")
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                    }
+                }
+                
+                Spacer()
+                
+                VStack(alignment: .trailing, spacing: 4) {
+                    Text("€\(vm.balance, specifier: "%.2f")")
+                        .foregroundColor(.accentCyan)
+                        .bold()
+                    
+                    if vm.selectedTab == 0 {
+                        Button(action: {
+                            if vm.selectedSport == "Calcio" {
+                                vm.fetchMatchesFromBetstack(for: vm.selectedSport)
+                            } else {
+                                // Per tennis, ricarica le partite simulate
+                                vm.generateTennisMatchesIfNeeded()
+                                vm.objectWillChange.send()
+                            }
+                        }) {
+                            Image(systemName: "arrow.clockwise")
+                                .foregroundColor(.accentCyan)
+                                .font(.system(size: 16))
+                        }
+                        .disabled(vm.isLoading)
+                    }
+                }
+            } else {
+                // Header standard per altre tab
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(vm.selectedTab == 1 ? "Giochi" :
+                         vm.selectedTab == 2 ? "Piazzate" : "Profilo")
+                    .font(.largeTitle.bold())
+                    .foregroundColor(.white)
+                }
+                
+                Spacer()
+                
+                VStack(alignment: .trailing, spacing: 4) {
+                    Text("€\(vm.balance, specifier: "%.2f")")
+                        .foregroundColor(.accentCyan)
+                        .bold()
                 }
             }
         }
         .padding()
+        .overlay(
+            // Menu sport dropdown (posizionato sotto header)
+            Group {
+                if vm.showSportPicker && vm.selectedTab == 0 {
+                    VStack(spacing: 0) {
+                        Button {
+                            vm.selectedSport = "Calcio"
+                            vm.showSportPicker = false
+                            vm.fetchMatchesFromBetstack(for: "Calcio")
+                        } label: {
+                            HStack {
+                                Image(systemName: "soccerball")
+                                    .foregroundColor(vm.selectedSport == "Calcio" ? .accentCyan : .white)
+                                Text("Calcio")
+                                    .foregroundColor(vm.selectedSport == "Calcio" ? .accentCyan : .white)
+                                Spacer()
+                                if vm.selectedSport == "Calcio" {
+                                    Image(systemName: "checkmark")
+                                        .foregroundColor(.accentCyan)
+                                }
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 12)
+                            .frame(width: 200)
+                        }
+                        .background(vm.selectedSport == "Calcio" ? Color.accentCyan.opacity(0.2) : Color.black.opacity(0.95))
+                        
+                        Button {
+                            vm.selectedSport = "Tennis"
+                            vm.showSportPicker = false
+                            vm.generateTennisMatchesIfNeeded()
+                        } label: {
+                            HStack {
+                                Image(systemName: "tennis.racket")
+                                    .foregroundColor(vm.selectedSport == "Tennis" ? .accentCyan : .white)
+                                Text("Tennis")
+                                    .foregroundColor(vm.selectedSport == "Tennis" ? .accentCyan : .white)
+                                Spacer()
+                                if vm.selectedSport == "Tennis" {
+                                    Image(systemName: "checkmark")
+                                        .foregroundColor(.accentCyan)
+                                }
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 12)
+                            .frame(width: 200)
+                        }
+                        .background(vm.selectedSport == "Tennis" ? Color.accentCyan.opacity(0.2) : Color.black.opacity(0.95))
+                    }
+                    .background(
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(Color.black.opacity(0.95))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .stroke(Color.accentCyan.opacity(0.3), lineWidth: 1)
+                            )
+                            .shadow(color: .black.opacity(0.3), radius: 10, x: 0, y: 5)
+                    )
+                    .offset(y: 60)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.leading, 16)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+                }
+            },
+            alignment: .topLeading
+        )
+        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: vm.showSportPicker)
     }
     
     private var formattedUpdateTime: String {
@@ -555,7 +812,7 @@ struct ContentView: View {
                 .progressViewStyle(CircularProgressViewStyle(tint: .accentCyan))
                 .scaleEffect(1.5)
             
-            Text("Caricamento partite da Betstack...")
+            Text("Caricamento partite...")
                 .foregroundColor(.accentCyan)
                 .font(.headline)
             
@@ -628,11 +885,16 @@ struct ContentView: View {
             }
             .padding()
         }
-        .id(vm.selectedDayIndex)
+        .id("\(vm.selectedDayIndex)-\(vm.selectedSport)") // Aggiorna quando cambia sport
         .transition(.opacity)
         .refreshable {
             if vm.selectedTab == 0 && vm.selectedDayIndex == 1 { // Solo per oggi
-                vm.fetchMatchesFromBetstack()
+                if vm.selectedSport == "Calcio" {
+                    vm.fetchMatchesFromBetstack(for: vm.selectedSport)
+                } else {
+                    vm.generateTennisMatchesIfNeeded()
+                    vm.objectWillChange.send()
+                }
             }
         }
     }
@@ -642,7 +904,7 @@ struct ContentView: View {
             Spacer()
                 .frame(height: 50)
             
-            Image(systemName: "soccerball")
+            Image(systemName: vm.selectedSport == "Calcio" ? "soccerball" : "tennis.racket")
                 .font(.system(size: 60))
                 .foregroundColor(.accentCyan)
             
@@ -656,7 +918,12 @@ struct ContentView: View {
                 .padding(.horizontal)
             
             Button("Aggiorna") {
-                vm.fetchMatchesFromBetstack()
+                if vm.selectedSport == "Calcio" {
+                    vm.fetchMatchesFromBetstack(for: vm.selectedSport)
+                } else {
+                    vm.generateTennisMatchesIfNeeded()
+                    vm.objectWillChange.send()
+                }
             }
             .padding()
             .background(Color.accentCyan)
@@ -702,6 +969,7 @@ struct ContentView: View {
                 }
             }
             
+            // Per il tennis, mostriamo solo 1 e 2 (non c'è X)
             HStack(spacing: 0) {
                 VStack(spacing: 4) {
                     Text("1")
@@ -713,19 +981,21 @@ struct ContentView: View {
                 }
                 .frame(maxWidth: .infinity)
                 
-                Divider()
-                    .frame(height: 30)
-                    .background(Color.gray.opacity(0.3))
-                
-                VStack(spacing: 4) {
-                    Text("X")
-                        .font(.caption)
-                        .foregroundColor(.gray)
-                    Text("\(match.odds.draw, specifier: "%.2f")")
-                        .font(.system(.body, design: .monospaced).bold())
-                        .foregroundColor(.white)
+                if vm.selectedSport == "Calcio" {
+                    Divider()
+                        .frame(height: 30)
+                        .background(Color.gray.opacity(0.3))
+                    
+                    VStack(spacing: 4) {
+                        Text("X")
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                        Text("\(match.odds.draw, specifier: "%.2f")")
+                            .font(.system(.body, design: .monospaced).bold())
+                            .foregroundColor(.white)
+                    }
+                    .frame(maxWidth: .infinity)
                 }
-                .frame(maxWidth: .infinity)
                 
                 Divider()
                     .frame(height: 30)
@@ -862,6 +1132,9 @@ struct ContentView: View {
         return Button {
             withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
                 vm.selectedTab = index
+                if index != 0 {
+                    vm.showSportPicker = false
+                }
             }
         } label: {
             VStack(spacing: 6) {
