@@ -703,7 +703,7 @@ struct ContentView: View {
         Group {
             if vm.showSportPicker && vm.selectedTab == 0 {
                 // Overlay scuro che blocca la vista sotto
-                Color.black.opacity(0.4)
+                Color.black.opacity(0.7)
                     .ignoresSafeArea()
                     .onTapGesture {
                         withAnimation {
