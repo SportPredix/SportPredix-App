@@ -655,17 +655,26 @@ struct ContentView: View {
     private var headerView: some View {
         VStack(spacing: 0) {
             HStack {
-                // Logo/Titolo
-                Text("SportPredix")
-                    .font(.title2.bold())
-                    .foregroundColor(.white)
+                // Logo/Titolo con freccia sport
+                HStack(spacing: 4) {
+                    Text("Sport")
+                        .font(.title2.bold())
+                        .foregroundColor(.white)
+                    
+                    if vm.selectedTab == 0 {
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundColor(.white)
+                            .rotationEffect(.degrees(vm.showSportPicker ? 180 : 0))
+                            .onTapGesture {
+                                withAnimation(.spring(response: 0.25, dampingFraction: 0.7)) {
+                                    vm.showSportPicker.toggle()
+                                }
+                            }
+                    }
+                }
                 
                 Spacer()
-                
-                // Pulsante sport solo per tab Calendario
-                if vm.selectedTab == 0 {
-                    sportSelectorButton
-                }
                 
                 // Saldo utente
                 VStack(alignment: .trailing, spacing: 2) {
@@ -697,22 +706,6 @@ struct ContentView: View {
         )
     }
     
-    private var sportSelectorButton: some View {
-        Button(action: {
-            withAnimation(.spring(response: 0.25, dampingFraction: 0.7)) {
-                vm.showSportPicker.toggle()
-            }
-        }) {
-            Image(systemName: "chevron.down")
-                .font(.system(size: 14, weight: .medium))
-                .foregroundColor(.white)
-                .rotationEffect(.degrees(vm.showSportPicker ? 180 : 0))
-                .padding(8)
-                .background(Color.white.opacity(0.1))
-                .clipShape(Circle())
-        }
-        .padding(.trailing, 8)
-    }
     
     private var sportDropdownMenu: some View {
         Group {
@@ -1106,14 +1099,13 @@ struct ContentView: View {
     
     private func bottomItemView(index: Int) -> some View {
         let icon: String
-        let title: String
         
         switch index {
-        case 0: icon = "calendar"; title = "Calendario"
-        case 1: icon = "dice.fill"; title = "Giochi"
-        case 2: icon = "list.bullet"; title = "Schedine"
-        case 3: icon = "person.crop.circle"; title = "Profilo"
-        default: icon = "circle"; title = ""
+        case 0: icon = "calendar"
+        case 1: icon = "dice.fill"
+        case 2: icon = "list.bullet"
+        case 3: icon = "person.crop.circle"
+        default: icon = "circle"
         }
         
         return Button {
@@ -1124,7 +1116,7 @@ struct ContentView: View {
                 }
             }
         } label: {
-            VStack(spacing: 6) {
+            VStack(spacing: 4) {
                 ZStack {
                     if vm.selectedTab == index {
                         Circle()
@@ -1136,10 +1128,6 @@ struct ContentView: View {
                         .font(.system(size: 20, weight: .semibold))
                         .foregroundColor(vm.selectedTab == index ? .accentCyan : .white.opacity(0.7))
                 }
-                
-                Text(title)
-                    .font(.caption)
-                    .foregroundColor(vm.selectedTab == index ? .accentCyan : .white.opacity(0.7))
                 
                 if vm.selectedTab == index {
                     Capsule()
